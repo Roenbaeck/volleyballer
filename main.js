@@ -15,8 +15,12 @@ const ui = {
   zoneColor: document.getElementById("zoneColor"),
   netHeight: document.getElementById("netHeight"),
   clearZones: document.getElementById("clearZones"),
-  resetPlayers: document.getElementById("resetPlayers")
+  resetPlayers: document.getElementById("resetPlayers"),
+  playerUI: document.getElementById("playerUI"),
+  playerLabel: document.getElementById("playerLabel")
 };
+
+let selectedPlayer = null;
 
 const COURT = {
   width: 9,
@@ -533,6 +537,32 @@ function createPlayer({ color, height = 1.75, label, side = "home", isBlocker = 
   return group;
 }
 
+function updatePlayerLabel(player, text) {
+  player.userData.label = text;
+  const labelSprite = player.children.find(c => c.type === "Sprite");
+  if (!labelSprite) return;
+
+  const canvas = labelSprite.material.map.image;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.beginPath();
+  if (ctx.roundRect) {
+    ctx.roundRect(0, 0, 120, 60, 12);
+  } else {
+    ctx.rect(0, 0, 120, 60);
+  }
+  ctx.fill();
+  ctx.fillStyle = "white";
+  ctx.font = "bold 30px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 60, 30);
+  
+  labelSprite.material.map.needsUpdate = true;
+}
+
 const blockers = [
   createPlayer({ color: 0x1565c0, label: "BL", side: "home", isBlocker: true }),
   createPlayer({ color: 0x1565c0, label: "BR", side: "home", isBlocker: true })
@@ -661,6 +691,16 @@ const attackTargetInner = new THREE.Mesh(
 attackTargetInner.rotation.x = -Math.PI / 2;
 attackTarget.add(attackTargetInner);
 
+// Selection Ring
+const selectionRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.35, 0.45, 32),
+  new THREE.MeshBasicMaterial({ color: 0x4fc3f7, transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+);
+selectionRing.rotation.x = -Math.PI / 2;
+selectionRing.position.y = 0.02;
+selectionRing.visible = false;
+scene.add(selectionRing);
+
 // Zones
 const zones = [];
 let paintMode = false;
@@ -730,6 +770,21 @@ function updateAttackIndicator() {
   attackLine.position.copy(mid);
   attackLine.scale.set(1, length, 1);
   attackLine.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+}
+
+function updatePlayerRotations() {
+  const ballPos = ball.position.clone();
+
+  [...blockers, ...defenders].forEach(player => {
+    // Determine target point: projected ball position at player's height
+    // This ensures they rotate only on the Y-axis
+    const target = new THREE.Vector3(ballPos.x, player.position.y, ballPos.z);
+    
+    // Smoothly or instantly face the ball
+    if (player.position.distanceTo(target) > 0.1) {
+      player.lookAt(target);
+    }
+  });
 }
 
 function updateBlockShadow() {
@@ -802,12 +857,31 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   setPointerFromEvent(event);
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(draggable, true);
-  if (!hits.length) return;
+  
+  if (!hits.length) {
+    selectedPlayer = null;
+    ui.playerUI.style.display = "none";
+    selectionRing.visible = false;
+    return;
+  }
   
   activeDrag = hits[0].object;
-  // Traverse up to find the root draggable group/mesh
   while (activeDrag.parent && !draggable.includes(activeDrag)) {
     activeDrag = activeDrag.parent;
+  }
+
+  // Selection logic
+  if (activeDrag.userData.kind === "player") {
+    selectedPlayer = activeDrag;
+    ui.playerUI.style.display = "block";
+    ui.playerLabel.value = selectedPlayer.userData.label;
+    selectionRing.visible = true;
+    selectionRing.position.x = selectedPlayer.position.x;
+    selectionRing.position.z = selectedPlayer.position.z;
+  } else {
+    selectedPlayer = null;
+    ui.playerUI.style.display = "none";
+    selectionRing.visible = false;
   }
 
   const dragHeight = activeDrag.userData.dragHeight ?? 0;
@@ -825,6 +899,13 @@ renderer.domElement.addEventListener("pointermove", (event) => {
   const dragHeight = activeDrag.userData.dragHeight ?? 0;
   activeDrag.position.set(dragPoint.x + dragOffset.x, dragHeight, dragPoint.z + dragOffset.z);
   clampToCourt(activeDrag);
+  
+  if (selectedPlayer === activeDrag) {
+    selectionRing.position.x = activeDrag.position.x;
+    selectionRing.position.z = activeDrag.position.z;
+  }
+  
+  updatePlayerRotations();
   updateAttackIndicator();
   updateBlockShadow();
 });
@@ -897,8 +978,21 @@ ui.resetPlayers.addEventListener("click", () => {
   defenders[2].position.set(2.7, defenders[2].userData.dragHeight, -5.6);
   defenders[3].position.set(0, defenders[3].userData.dragHeight, -2.8);
   ball.position.set(0, 3, 4);
+  
+  if (selectedPlayer) {
+    selectionRing.position.x = selectedPlayer.position.x;
+    selectionRing.position.z = selectedPlayer.position.z;
+  }
+  
+  updatePlayerRotations();
   updateAttackIndicator();
   updateBlockShadow();
+});
+
+ui.playerLabel.addEventListener("input", (event) => {
+  if (selectedPlayer) {
+    updatePlayerLabel(selectedPlayer, event.target.value.toUpperCase());
+  }
 });
 
 ui.netHeight.addEventListener("change", (event) => {
@@ -918,6 +1012,7 @@ netTape.position.y = initialNetHeight + 0.015;
 netBottomTape.position.y = initialNetHeight - 1.0 + 0.025;
 
 setPaintMode(false);
+updatePlayerRotations();
 updateAttackIndicator();
 updateBlockShadow();
 

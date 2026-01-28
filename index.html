@@ -150,6 +150,15 @@
       <button id="clearZones">Clear zones</button>
       <button id="resetPlayers">Reset players</button>
     </div>
+
+    <div id="playerUI" style="display:none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--panel-border);">
+      <div class="control">
+        <label for="playerLabel">Selected player tag</label>
+        <input type="text" id="playerLabel" maxlength="6" style="width: 100px; background: #161b22; color: #e6eef7; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 10px;" />
+      </div>
+      <p style="font-size: 10px; margin-top: -4px;">Change text to assign roles (e.g., S, MB, OH, OP)</p>
+    </div>
+
     <div id="legend">
       <div class="dot" style="background:#1976d2"></div><div>Blockers</div>
       <div class="dot" style="background:#43a047"></div><div>Defenders</div>
