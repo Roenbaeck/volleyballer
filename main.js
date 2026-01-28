@@ -153,20 +153,27 @@ rimLight.position.set(0, 8, -15);
 scene.add(rimLight);
 
 // Stadium spot lights
-function createSpotLight(x, z, intensity, color) {
+function createSpotLight(x, z, intensity, color, casting = false) {
   const spot = new THREE.SpotLight(color, intensity, 40, Math.PI / 6, 0.5, 1);
   spot.position.set(x, 18, z);
   spot.target.position.set(0, 0, 0);
-  spot.castShadow = false;
+  if (casting) {
+    spot.castShadow = true;
+    spot.shadow.mapSize.width = 1024;
+    spot.shadow.mapSize.height = 1024;
+    spot.shadow.camera.near = 10;
+    spot.shadow.camera.far = 40;
+    spot.shadow.bias = -0.0001;
+  }
   scene.add(spot);
   scene.add(spot.target);
   return spot;
 }
 
-createSpotLight(-8, -8, 60, 0xffffff);
-createSpotLight(8, -8, 60, 0xffffff);
-createSpotLight(-8, 8, 40, 0xffeedd);
-createSpotLight(8, 8, 40, 0xffeedd);
+createSpotLight(-12, 12, 120, 0xffffff, true);
+createSpotLight(12, 12, 60, 0xffffff, false);
+createSpotLight(-12, -12, 80, 0xffeedd, true);
+createSpotLight(12, -12, 40, 0xffeedd, false);
 
 // Hemisphere light for realistic ambient
 const hemi = new THREE.HemisphereLight(0x87ceeb, 0x362a1a, 0.25);
@@ -412,115 +419,118 @@ netBottomTape.position.z = 0;
 netBottomTape.castShadow = true;
 scene.add(netBottomTape);
 
-// Player tokens (enhanced sprites with shadows and detail)
+// Dynamic 3D character models
 function createPlayer({ color, height = 1.75, label, side = "home", isBlocker = false }) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 256;
-  canvas.height = 512;
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const group = new THREE.Group();
   
-  const colorHex = `#${color.toString(16).padStart(6, "0")}`;
-  
-  // Shadow under player
-  ctx.fillStyle = "rgba(0,0,0,0.3)";
-  ctx.beginPath();
-  ctx.ellipse(128, 485, 50, 15, 0, 0, Math.PI * 2);
-  ctx.fill();
-  
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8d4c4, roughness: 0.8 });
+  const jerseyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.4, metalness: 0.1 });
+  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
+  const shoeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.5 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
+
+  const s = height / 1.75;
+
   // Legs
-  ctx.fillStyle = colorHex;
-  ctx.shadowColor = "rgba(0,0,0,0.4)";
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetX = 4;
-  ctx.shadowOffsetY = 4;
-  ctx.beginPath();
-  ctx.roundRect(68, 320, 40, 140, 20);
-  ctx.roundRect(148, 320, 40, 140, 20);
-  ctx.fill();
+  const legGeo = new THREE.CapsuleGeometry(0.09 * s, 0.45 * s, 4, 8);
+  const leftLeg = new THREE.Mesh(legGeo, pantsMat);
+  leftLeg.position.set(-0.16 * s, 0.32 * s, 0);
+  leftLeg.castShadow = true;
+  group.add(leftLeg);
+
+  const rightLeg = new THREE.Mesh(legGeo, pantsMat);
+  rightLeg.position.set(0.16 * s, 0.32 * s, 0);
+  rightLeg.castShadow = true;
+  group.add(rightLeg);
   
-  // Body
-  ctx.beginPath();
-  ctx.roundRect(58, 120, 140, 210, 30);
-  ctx.fill();
+  // Shoes
+  const shoeGeo = new THREE.BoxGeometry(0.12 * s, 0.08 * s, 0.22 * s);
+  const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
+  leftShoe.position.set(-0.16 * s, 0.04 * s, 0.04 * s);
+  leftShoe.castShadow = true;
+  group.add(leftShoe);
   
-  // Jersey number/detail
-  ctx.shadowColor = "transparent";
-  ctx.fillStyle = "rgba(255,255,255,0.2)";
-  ctx.beginPath();
-  ctx.roundRect(90, 160, 76, 80, 10);
-  ctx.fill();
-  
-  // Arms
-  ctx.fillStyle = colorHex;
-  ctx.shadowColor = "rgba(0,0,0,0.4)";
-  ctx.shadowBlur = 8;
-  if (isBlocker) {
-    // Arms up for blocking
-    ctx.beginPath();
-    ctx.roundRect(25, 40, 38, 160, 18);
-    ctx.roundRect(193, 40, 38, 160, 18);
-    ctx.fill();
-    
-    // Hands
-    ctx.fillStyle = "#e8d4c4";
-    ctx.shadowColor = "transparent";
-    ctx.beginPath();
-    ctx.ellipse(44, 35, 22, 25, 0, 0, Math.PI * 2);
-    ctx.ellipse(212, 35, 22, 25, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    // Arms down/ready position
-    ctx.beginPath();
-    ctx.roundRect(20, 140, 38, 120, 18);
-    ctx.roundRect(198, 140, 38, 120, 18);
-    ctx.fill();
-  }
-  
+  const rightShoe = new THREE.Mesh(shoeGeo, shoeMat);
+  rightShoe.position.set(0.16 * s, 0.04 * s, 0.04 * s);
+  rightShoe.castShadow = true;
+  group.add(rightShoe);
+
+  // Torso
+  const torsoGeo = new THREE.CylinderGeometry(0.24 * s, 0.18 * s, 0.65 * s, 8);
+  const torso = new THREE.Mesh(torsoGeo, jerseyMat);
+  torso.position.y = 0.85 * s;
+  torso.castShadow = true;
+  group.add(torso);
+
   // Head
-  ctx.fillStyle = "#e8d4c4";
-  ctx.shadowColor = "rgba(0,0,0,0.3)";
-  ctx.shadowBlur = 6;
-  ctx.beginPath();
-  ctx.ellipse(128, 70, 42, 50, 0, 0, Math.PI * 2);
-  ctx.fill();
+  const headGroup = new THREE.Group();
+  headGroup.position.y = 1.3 * s;
+  group.add(headGroup);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13 * s, 16, 16), skinMat);
+  head.castShadow = true;
+  headGroup.add(head);
+
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.135 * s, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
+  hair.rotation.x = -0.2;
+  headGroup.add(hair);
+
+  // Arms
+  const armGeo = new THREE.CapsuleGeometry(0.07 * s, 0.45 * s, 4, 8);
+  const leftArm = new THREE.Mesh(armGeo, skinMat);
+  const rightArm = new THREE.Mesh(armGeo, skinMat);
   
-  // Hair
-  ctx.shadowColor = "transparent";
-  ctx.fillStyle = "#3a2a1a";
-  ctx.beginPath();
-  ctx.ellipse(128, 50, 38, 30, 0, Math.PI, Math.PI * 2);
-  ctx.fill();
+  if (isBlocker) {
+    leftArm.position.set(-0.32 * s, 1.35 * s, 0);
+    leftArm.rotation.z = 0.1;
+    rightArm.position.set(0.32 * s, 1.35 * s, 0);
+    rightArm.rotation.z = -0.1;
+  } else {
+    leftArm.position.set(-0.32 * s, 0.9 * s, 0.15 * s);
+    leftArm.rotation.x = -1.1;
+    leftArm.rotation.z = 0.25;
+    rightArm.position.set(0.32 * s, 0.9 * s, 0.15 * s);
+    rightArm.rotation.x = -1.1;
+    rightArm.rotation.z = -0.25;
+  }
+  leftArm.castShadow = true;
+  rightArm.castShadow = true;
+  group.add(leftArm, rightArm);
+
+  // Floating label
+  const labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 120;
+  labelCanvas.height = 60;
+  const lctx = labelCanvas.getContext("2d");
+  lctx.fillStyle = "rgba(0,0,0,0.6)";
+  lctx.beginPath();
+  if (lctx.roundRect) {
+    lctx.roundRect(0, 0, 120, 60, 12);
+  } else {
+    lctx.rect(0, 0, 120, 60);
+  }
+  lctx.fill();
+  lctx.fillStyle = "white";
+  lctx.font = "bold 30px sans-serif";
+  lctx.textAlign = "center";
+  lctx.textBaseline = "middle";
+  lctx.fillText(label, 60, 30);
   
-  // Face details
-  ctx.fillStyle = "#2a1a0a";
-  ctx.beginPath();
-  ctx.ellipse(115, 65, 4, 5, 0, 0, Math.PI * 2);
-  ctx.ellipse(141, 65, 4, 5, 0, 0, Math.PI * 2);
-  ctx.fill();
-  
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.SpriteMaterial({ 
-    map: texture, 
-    transparent: true,
-    depthTest: true,
-    depthWrite: false
-  });
-  const sprite = new THREE.Sprite(material);
-  
-  const scaleY = height;
-  const scaleX = height * 0.5;
-  sprite.scale.set(scaleX, scaleY, 1);
-  const jumpOffset = isBlocker ? 0.4 : 0;
-  sprite.userData = {
+  const labelTex = new THREE.CanvasTexture(labelCanvas);
+  const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true }));
+  labelSprite.position.y = 1.7 * s;
+  labelSprite.scale.set(0.8, 0.4, 1);
+  group.add(labelSprite);
+
+  const jumpOffset = isBlocker ? 0.35 : 0;
+  group.userData = {
     label,
     side,
-    dragHeight: scaleY / 2 + jumpOffset,
+    dragHeight: jumpOffset,
     jumpOffset,
     kind: "player"
   };
-  return sprite;
+  return group;
 }
 
 const blockers = [
@@ -793,7 +803,13 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(draggable, true);
   if (!hits.length) return;
+  
   activeDrag = hits[0].object;
+  // Traverse up to find the root draggable group/mesh
+  while (activeDrag.parent && !draggable.includes(activeDrag)) {
+    activeDrag = activeDrag.parent;
+  }
+
   const dragHeight = activeDrag.userData.dragHeight ?? 0;
   dragPlane.set(new THREE.Vector3(0, 1, 0), -dragHeight);
   raycaster.ray.intersectPlane(dragPlane, dragPoint);
