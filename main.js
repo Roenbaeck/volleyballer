@@ -423,7 +423,7 @@ netBottomTape.castShadow = true;
 scene.add(netBottomTape);
 
 // Dynamic 3D character models with realistic proportions
-function createPlayer({ color, height = 1.9, label, side = "home", isBlocker = false }) {
+function createPlayer({ color = 0x1565c0, height = 1.9, label, side = "home", isBlocker = false }) {
   const group = new THREE.Group();
   
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8d4c4, roughness: 0.8 });
@@ -598,11 +598,11 @@ const players = [
 ];
 
 function resetPlayerPositions() {
-  players[0].position.set(-3.0, players[0].userData.dragHeight, -6.0); // Pos 5
-  players[1].position.set(-3.0, players[1].userData.dragHeight, -0.6); // Pos 4
+  players[0].position.set(-3.0, players[0].userData.dragHeight, -6.0); // Pos 1
+  players[1].position.set(-3.0, players[1].userData.dragHeight, -0.6); // Pos 2
   players[2].position.set(0.0, players[2].userData.dragHeight, -0.6);  // Pos 3
-  players[3].position.set(3.0, players[3].userData.dragHeight, -0.6);  // Pos 2
-  players[4].position.set(3.0, players[4].userData.dragHeight, -6.0);  // Pos 1
+  players[3].position.set(3.0, players[3].userData.dragHeight, -0.6);  // Pos 4
+  players[4].position.set(3.0, players[4].userData.dragHeight, -6.0);  // Pos 5
   players[5].position.set(0.0, players[5].userData.dragHeight, -7.0);  // Pos 6
   
   players.forEach(p => {
