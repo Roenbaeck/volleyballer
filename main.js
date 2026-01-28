@@ -751,6 +751,7 @@ const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 function setPaintMode(active) {
   paintMode = active;
   controls.enabled = !active;
+  renderer.domElement.style.cursor = active ? "crosshair" : "default";
 }
 
 function worldPointFromEvent(event) {
@@ -964,6 +965,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   while (activeDrag.parent && !draggable.includes(activeDrag)) {
     activeDrag = activeDrag.parent;
   }
+  renderer.domElement.style.cursor = "grabbing";
 
   // Selection logic
   if (activeDrag.userData.kind === "player") {
@@ -987,35 +989,48 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 });
 
 renderer.domElement.addEventListener("pointermove", (event) => {
-  if (!activeDrag || paintMode) return;
-  setPointerFromEvent(event);
-  raycaster.setFromCamera(pointer, camera);
-  if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
-  const dragHeight = activeDrag.userData.dragHeight ?? 0;
-  activeDrag.position.set(dragPoint.x + dragOffset.x, dragHeight, dragPoint.z + dragOffset.z);
-  clampToCourt(activeDrag);
-  
-  // Proximity-based stance switching
-  if (activeDrag.userData.kind === "player") {
-    const isAtNet = activeDrag.position.z > -1.5;
-    if (activeDrag.userData.isBlocker !== isAtNet) {
-      setPlayerStance(activeDrag, isAtNet);
+  if (activeDrag && !paintMode) {
+    setPointerFromEvent(event);
+    raycaster.setFromCamera(pointer, camera);
+    if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
+    const dragHeight = activeDrag.userData.dragHeight ?? 0;
+    activeDrag.position.set(dragPoint.x + dragOffset.x, dragHeight, dragPoint.z + dragOffset.z);
+    clampToCourt(activeDrag);
+    
+    // Proximity-based stance switching
+    if (activeDrag.userData.kind === "player") {
+      const isAtNet = activeDrag.position.z > -1.5;
+      if (activeDrag.userData.isBlocker !== isAtNet) {
+        setPlayerStance(activeDrag, isAtNet);
+      }
     }
+
+    if (selectedPlayer === activeDrag) {
+      selectionRing.position.x = activeDrag.position.x;
+      selectionRing.position.z = activeDrag.position.z;
+    }
+    
+    updatePlayerRotations();
+    updateAttackIndicator();
+    updateBlockShadow();
+    return;
   }
 
-  if (selectedPlayer === activeDrag) {
-    selectionRing.position.x = activeDrag.position.x;
-    selectionRing.position.z = activeDrag.position.z;
+  // Hover effect - change cursor when over draggable objects
+  if (!paintMode && !activeDrag) {
+    setPointerFromEvent(event);
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(draggable, true);
+    renderer.domElement.style.cursor = intersects.length > 0 ? "grab" : "default";
+  } else if (paintMode) {
+    renderer.domElement.style.cursor = "crosshair";
   }
-  
-  updatePlayerRotations();
-  updateAttackIndicator();
-  updateBlockShadow();
 });
 
 renderer.domElement.addEventListener("pointerup", () => {
   if (!activeDrag) return;
   activeDrag = null;
+  renderer.domElement.style.cursor = "default";
   controls.enabled = !paintMode;
 });
 
