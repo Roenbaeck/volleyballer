@@ -608,19 +608,14 @@ const shadowMat = new THREE.MeshBasicMaterial({
   color: 0x000000, 
   transparent: true, 
   opacity: 0.45, 
-  side: THREE.DoubleSide 
+  side: THREE.DoubleSide,
+  depthWrite: false
 });
-const blockShadows = [];
-
-function createShadowMesh() {
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shadowMat.clone());
-  mesh.rotation.set(0, 0, 0);
-  mesh.position.set(0, 0, 0);
-  scene.add(mesh);
-  return mesh;
-}
-
-blockShadows.push(createShadowMesh(), createShadowMesh());
+const blockShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shadowMat);
+blockShadow.rotation.set(0, 0, 0);
+blockShadow.position.set(0, 0, 0);
+blockShadow.renderOrder = -1;
+scene.add(blockShadow);
 
 // Attack indicator (glowing)
 const attackLineMat = new THREE.MeshBasicMaterial({ 
@@ -733,7 +728,9 @@ function updateBlockShadow() {
   const depth = 14;
   const blockerRadius = 0.4;
 
-  blockers.forEach((blocker, index) => {
+  const allPositions = [];
+
+  blockers.forEach((blocker) => {
     const bPos = blocker.position.clone();
     bPos.y = 0;
 
@@ -752,20 +749,29 @@ function updateBlockShadow() {
     const farA = edgeA.clone().addScaledVector(rayA, depth);
     const farB = edgeB.clone().addScaledVector(rayB, depth);
 
-    const mesh = blockShadows[index];
-    const positions = new Float32Array([
+    allPositions.push(
       edgeA.x, 0.01, edgeA.z,
       edgeB.x, 0.01, edgeB.z,
       farB.x, 0.01, farB.z,
       farA.x, 0.01, farA.z
-    ]);
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.setIndex([0, 1, 2, 2, 3, 0]);
-    geometry.computeVertexNormals();
-    mesh.geometry.dispose();
-    mesh.geometry = geometry;
+    );
   });
+
+  if (allPositions.length === 0) return;
+
+  const positions = new Float32Array(allPositions);
+  const indices = [];
+  for (let i = 0; i < blockers.length; i++) {
+    const base = i * 4;
+    indices.push(base, base + 1, base + 2, base + 2, base + 3, base);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  blockShadow.geometry.dispose();
+  blockShadow.geometry = geometry;
 }
 
 // Dragging (custom ground-plane drag)
