@@ -10,9 +10,12 @@ A high-performance, 3D interactive tactics board for volleyball coaches and play
 
 - **3D Interactive Board**: Smooth navigation with orbit controls (Zoom, Rotate, Pan).
 - **Realistic Player Models**: 3D characters with adjustable heights (1.60m to 2.20m) and anatomically correct proportions.
-- **Roster & Tactical Management**: Save and load custom lineups and player positions to local storage.
-- **Shareable Layouts**: Generate encoded URLs to share specific tactical setups with teammates or coaches.
-- **Standard Rotation Numbering**: Counter-clockwise 1-6 layout (Pos 1 at back-right).
+- **Roster & Tactical Management**: Save and load custom lineups and player positions.
+- **Team Rotation Tool**: One-click clockwise rotation for tactical drill planning.
+- **Shareable Layouts**: Generate encoded URLs to share specific tactical setups.
+- **Enhanced Player Attributes**: 
+  - **Height**: Adjustable (1.60m to 2.20m).
+  - **Block Reach**: Set individual vertical jump potential; blockers will "jump" higher based on their reach attribute.
 - **Adaptive Player Stances**: 
   - **Blockers (Blue)**: Automatically switch to a blocking stance (arms up, jumping) when near the net.
   - **Defenders (Green)**: Switch to a crouched defensive stance when moving to the back court.

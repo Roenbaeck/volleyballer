@@ -180,6 +180,7 @@
     <div class="control">
       <button id="clearZones" title="Remove all painted zones from the court">Clear zones</button>
       <button id="resetPlayers" title="Reset all players to their default 6-position rotation">Reset players</button>
+      <button id="rotateTeam" title="Rotate team clockwise (Position 1 moves to 6, etc.)">Rotate team</button>
     </div>
 
     <!-- Attack Settings -->
@@ -236,7 +237,7 @@
 
     <div id="playerUI" style="display:none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--panel-border);">
       <h2 style="font-size: 13px; margin: 0 0 10px; color: var(--accent);">Selected Player</h2>
-      <div class="control" title="Enter a player role (e.g., S, OH, MB) or name">
+      <div class="control" title="Enter a player role or name (e.g., S, MB, OH, OP, L)">
         <label for="playerLabel">Tag / Role</label>
         <input type="text" id="playerLabel" maxlength="6" style="width: 100px; background: #161b22; color: #e6eef7; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 6px 10px;" />
       </div>
@@ -244,7 +245,10 @@
         <label for="pHeight">Player Height: <span id="pHeightVal" class="pill" style="padding: 2px 6px; font-size: 9px;">1.90m</span></label>
         <input type="range" id="pHeight" min="1.6" max="2.2" step="0.01" value="1.9" />
       </div>
-      <p style="font-size: 10px; margin-top: -4px; color: rgba(230,238,247,0.5);">Role examples: S, MB, OH, OP, L</p>
+      <div class="control" title="Adjust the player's maximum reach height during a block">
+        <label for="pJump">Block Reach: <span id="pJumpVal" class="pill" style="padding: 2px 6px; font-size: 9px;">3.10m</span></label>
+        <input type="range" id="pJump" min="2.0" max="4.0" step="0.01" value="3.10" />
+      </div>
     </div>
 
     <div id="legend">

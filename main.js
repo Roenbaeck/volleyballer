@@ -13,10 +13,13 @@ const ui = {
   zoneColor: document.getElementById("zoneColor"),
   clearZones: document.getElementById("clearZones"),
   resetPlayers: document.getElementById("resetPlayers"),
+  rotateTeam: document.getElementById("rotateTeam"),
   playerUI: document.getElementById("playerUI"),
   playerLabel: document.getElementById("playerLabel"),
   pHeight: document.getElementById("pHeight"),
   pHeightVal: document.getElementById("pHeightVal"),
+  pJump: document.getElementById("pJump"),
+  pJumpVal: document.getElementById("pJumpVal"),
   contactHeight: document.getElementById("contactHeight"),
   heightValue: document.getElementById("heightValue"),
   attackPower: document.getElementById("attackPower"),
@@ -471,7 +474,7 @@ netBottomTape.castShadow = true;
 scene.add(netBottomTape);
 
 // Dynamic 3D character models with realistic proportions
-function createPlayer({ color = 0x1565c0, height = 1.9, label, side = "home", isBlocker = false }) {
+function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side = "home", isBlocker = false }) {
   const group = new THREE.Group();
   
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8d4c4, roughness: 0.8 });
@@ -570,6 +573,8 @@ function createPlayer({ color = 0x1565c0, height = 1.9, label, side = "home", is
   group.userData.label = label;
   group.userData.side = side;
   group.userData.kind = "player";
+  group.userData.height = height;
+  group.userData.jump = jump;
   
   setPlayerStance(group, isBlocker);
   return group;
@@ -578,6 +583,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, label, side = "home", is
 function setPlayerStance(player, isBlocker) {
   player.userData.isBlocker = isBlocker;
   const H = player.userData.height || 1.9;
+  const J = player.userData.jump || (H * 1.3); // Default reach
   const armLen = H * 0.45;
   const shoulderY = H * 0.82;
   const shoulderWidth = H * 0.18;
@@ -601,7 +607,10 @@ function setPlayerStance(player, isBlocker) {
       leftArm.rotation.set(0, 0, 0.03);
       rightArm.position.set(shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
       rightArm.rotation.set(0, 0, -0.03);
-      player.userData.dragHeight = 0.4;
+      
+      // Dynamic jump height based on Block Reach
+      const standingReach = shoulderY + armLen;
+      player.userData.dragHeight = Math.max(0.1, J - standingReach);
     } else {
       leftArm.position.set(-shoulderWidth, shoulderY - armLen * 0.2, H * 0.1);
       leftArm.rotation.set(-1.2, 0, 0.2);
@@ -612,7 +621,7 @@ function setPlayerStance(player, isBlocker) {
   }
   
   if (labelSprite) {
-    labelSprite.position.y = H + 0.25 + (isBlocker ? 0.4 : 0);
+    labelSprite.position.y = H + 0.25;
   }
   player.position.y = player.userData.dragHeight;
 }
@@ -645,6 +654,7 @@ function updatePlayerHeight(player, newHeight, silent = false) {
   const oldLabel = player.userData.label;
   const oldIsBlocker = player.userData.isBlocker;
   const oldSide = player.userData.side;
+  const oldJump = player.userData.jump || 3.10;
 
   // Remove old
   scene.remove(player);
@@ -654,6 +664,48 @@ function updatePlayerHeight(player, newHeight, silent = false) {
   const newPlayer = createPlayer({ 
     label: oldLabel, 
     height: newHeight, 
+    jump: oldJump,
+    isBlocker: oldIsBlocker,
+    side: oldSide
+  });
+  newPlayer.position.copy(oldPos);
+  
+  // Update arrays
+  if (idx !== -1) {
+    players[idx] = newPlayer;
+    // Update draggable array as well
+    const dragIdx = draggable.indexOf(player);
+    if (dragIdx !== -1) draggable[dragIdx] = newPlayer;
+    
+    // Update allPlayers as well
+    const allIdx = allPlayers.indexOf(player);
+    if (allIdx !== -1) allPlayers[allIdx] = newPlayer;
+  }
+  
+  scene.add(newPlayer);
+  if (selectedPlayer === player) selectedPlayer = newPlayer;
+  
+  updateBlockShadow();
+  updatePlayerRotations();
+  if (!silent) saveLastKnown();
+}
+
+function updatePlayerJump(player, newJump, silent = false) {
+  const oldPos = player.position.clone();
+  const oldLabel = player.userData.label;
+  const oldIsBlocker = player.userData.isBlocker;
+  const oldSide = player.userData.side;
+  const oldHeight = player.userData.height;
+
+  // Remove old
+  scene.remove(player);
+  const idx = players.indexOf(player);
+  
+  // Create new
+  const newPlayer = createPlayer({ 
+    label: oldLabel, 
+    height: oldHeight, 
+    jump: newJump,
     isBlocker: oldIsBlocker,
     side: oldSide
   });
@@ -1309,6 +1361,8 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     ui.playerLabel.value = selectedPlayer.userData.label;
     ui.pHeight.value = selectedPlayer.userData.height;
     ui.pHeightVal.textContent = selectedPlayer.userData.height.toFixed(2) + "m";
+    ui.pJump.value = selectedPlayer.userData.jump || 3.10;
+    ui.pJumpVal.textContent = (selectedPlayer.userData.jump || 3.10).toFixed(2) + "m";
     selectionRing.visible = true;
     selectionRing.position.x = selectedPlayer.position.x;
     selectionRing.position.z = selectedPlayer.position.z;
@@ -1464,6 +1518,30 @@ ui.resetPlayers.addEventListener("click", () => {
   resetPlayerPositions();
 });
 
+ui.rotateTeam.addEventListener("click", () => {
+  // Rotate team clockwise (Standard VB rotation)
+  // i=0(P1), i=1(P2), i=2(P3), i=3(P4), i=4(P5), i=5(P6)
+  const oldPositions = players.map(p => p.position.clone());
+  
+  // Rotation: P1 moves to P6's old spot, P6 to P5, P5 to P4, P4 to P3, P3 to P2, P2 to P1
+  // This means P6 gets P1's old position, etc.
+  players[5].position.copy(oldPositions[0]); // P6 -> Pos 1's old
+  players[4].position.copy(oldPositions[5]); // P5 -> Pos 6's old
+  players[3].position.copy(oldPositions[4]); // P4 -> Pos 5's old
+  players[2].position.copy(oldPositions[3]); // P3 -> Pos 4's old
+  players[1].position.copy(oldPositions[2]); // P2 -> Pos 3's old
+  players[0].position.copy(oldPositions[1]); // P1 -> Pos 2's old
+
+  players.forEach(p => {
+    const isAtNet = p.position.z > -1.5;
+    setPlayerStance(p, isAtNet);
+  });
+  
+  updatePlayerRotations();
+  updateBlockShadow();
+  saveLastKnown();
+});
+
 ui.contactHeight.addEventListener("input", (e) => {
   const val = parseFloat(e.target.value);
   ball.position.y = val;
@@ -1521,6 +1599,14 @@ ui.pHeight.addEventListener("input", (e) => {
   }
 });
 
+ui.pJump.addEventListener("input", (e) => {
+  if (selectedPlayer) {
+    const val = parseFloat(e.target.value);
+    ui.pJumpVal.textContent = val.toFixed(2) + "m";
+    updatePlayerJump(selectedPlayer, val);
+  }
+});
+
 ui.saveLineup.addEventListener("click", () => saveLineup("NAMED"));
 ui.loadLineup.addEventListener("click", () => loadLineup("NAMED"));
 ui.deleteLineup.addEventListener("click", deleteLineup);
@@ -1531,6 +1617,48 @@ ui.deletePos.addEventListener("click", deletePosition);
 ui.shareLayout.addEventListener("click", generateShareUrl);
 
 refreshDropdowns();
+
+ui.rotateTeam.addEventListener("click", () => {
+  // Standard Rotation: 1 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1
+  // We'll perform a clockwise shift of positions among the 6 players.
+  if (players.length < 6) return;
+
+  // Store current positions
+  const pos = players.map(p => p.position.clone());
+  
+  // Shift: 
+  // Player 1 (idx 0) moves to Player 6's spot (idx 5)
+  // Player 6 (idx 5) moves to Player 5's spot (idx 4)
+  // Player 5 (idx 4) moves to Player 4's spot (idx 3)
+  // Player 4 (idx 3) moves to Player 3's spot (idx 2)
+  // Player 3 (idx 2) moves to Player 2's spot (idx 1)
+  // Player 2 (idx 1) moves to Player 1's spot (idx 0)
+  
+  const oldPos = [...pos];
+  players[0].position.copy(oldPos[5]);
+  players[5].position.copy(oldPos[4]);
+  players[4].position.copy(oldPos[3]);
+  players[3].position.copy(oldPos[2]);
+  players[2].position.copy(oldPos[1]);
+  players[1].position.copy(oldPos[0]);
+
+  // Update heights/stances/shadows
+  players.forEach(p => {
+    const isAtNet = p.position.z > -1.5;
+    setPlayerStance(p, isAtNet);
+    p.position.y = p.userData.dragHeight;
+  });
+
+  if (selectedPlayer) {
+    selectionRing.position.x = selectedPlayer.position.x;
+    selectionRing.position.z = selectedPlayer.position.z;
+  }
+
+  updatePlayerRotations();
+  updateBlockShadow();
+  updateNetShadow();
+  saveLastKnown();
+});
 
 function applyTacticalState(data) {
   if (data.players) {
