@@ -15,10 +15,53 @@ const ui = {
   resetPlayers: document.getElementById("resetPlayers"),
   playerUI: document.getElementById("playerUI"),
   playerLabel: document.getElementById("playerLabel"),
+  pHeight: document.getElementById("pHeight"),
+  pHeightVal: document.getElementById("pHeightVal"),
   contactHeight: document.getElementById("contactHeight"),
   heightValue: document.getElementById("heightValue"),
   attackPower: document.getElementById("attackPower"),
-  powerValue: document.getElementById("powerValue")
+  powerValue: document.getElementById("powerValue"),
+
+  saveLineup: document.getElementById("saveLineup"),
+  loadLineup: document.getElementById("loadLineup"),
+  deleteLineup: document.getElementById("deleteLineup"),
+  lineupName: document.getElementById("lineupName"),
+  lineupList: document.getElementById("lineupList"),
+
+  savePos: document.getElementById("savePos"),
+  loadPos: document.getElementById("loadPos"),
+  deletePos: document.getElementById("deletePos"),
+  posName: document.getElementById("posName"),
+  posList: document.getElementById("posList")
+};
+
+const DEFAULT_TACTICS = {
+  "Diagonal Block": {
+    players: [
+      {x: -2.65, z: -3.18},
+      {x: -2.91, z: -0.3},
+      {x: -2.15, z: -0.3},
+      {x: 1.35, z: -1.58},
+      {x: 2.25, z: -6.9},
+      {x: -3.44, z: -5.91}
+    ],
+    ball: { x: -3.17, z: 0.69 },
+    target: { x: -3.87, z: -7.71 },
+    physics: { height: "3.2", power: "75" }
+  },
+  "Parallel Block": {
+    players: [
+      {x: -3.4, z: -3.27},
+      {x: -3.71, z: -0.3},
+      {x: -2.89, z: -0.3},
+      {x: 1.64, z: -1.75},
+      {x: 2.73, z: -6.78},
+      {x: -0.61, z: -7.73}
+    ],
+    ball: { x: -3.22, z: 0.61 },
+    target: { x: 3.59, z: -7.63 },
+    physics: { height: "3", power: "60" }
+  }
 };
 
 let selectedPlayer = null;
@@ -521,7 +564,10 @@ function createPlayer({ color = 0x1565c0, height = 1.9, label, side = "home", is
   labelSprite.scale.set(0.8, 0.4, 1);
   group.add(labelSprite);
 
-  group.userData = { label, side, kind: "player" };
+  group.userData.label = label;
+  group.userData.side = side;
+  group.userData.kind = "player";
+  
   setPlayerStance(group, isBlocker);
   return group;
 }
@@ -568,7 +614,7 @@ function setPlayerStance(player, isBlocker) {
   player.position.y = player.userData.dragHeight;
 }
 
-function updatePlayerLabel(player, text) {
+function updatePlayerLabel(player, text, silent = false) {
   player.userData.label = text;
   const labelSprite = player.getObjectByName("labelSprite");
   if (!labelSprite) return;
@@ -588,6 +634,201 @@ function updatePlayerLabel(player, text) {
   ctx.fillText(text, 60, 30);
   
   labelSprite.material.map.needsUpdate = true;
+  if (!silent) saveLastKnown();
+}
+
+function updatePlayerHeight(player, newHeight, silent = false) {
+  const oldPos = player.position.clone();
+  const oldLabel = player.userData.label;
+  const oldIsBlocker = player.userData.isBlocker;
+  const oldSide = player.userData.side;
+
+  // Remove old
+  scene.remove(player);
+  const idx = players.indexOf(player);
+  
+  // Create new
+  const newPlayer = createPlayer({ 
+    label: oldLabel, 
+    height: newHeight, 
+    isBlocker: oldIsBlocker,
+    side: oldSide
+  });
+  newPlayer.position.copy(oldPos);
+  
+  // Update arrays
+  if (idx !== -1) {
+    players[idx] = newPlayer;
+    // Update draggable array as well
+    const dragIdx = draggable.indexOf(player);
+    if (dragIdx !== -1) draggable[dragIdx] = newPlayer;
+    
+    // Update allPlayers as well
+    const allIdx = allPlayers.indexOf(player);
+    if (allIdx !== -1) allPlayers[allIdx] = newPlayer;
+  }
+  
+  scene.add(newPlayer);
+  if (selectedPlayer === player) selectedPlayer = newPlayer;
+  
+  updateBlockShadow();
+  updatePlayerRotations();
+  if (!silent) saveLastKnown();
+}
+
+function refreshDropdowns() {
+  const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+  ui.lineupList.innerHTML = '<option value="">Select Lineup...</option>';
+  Object.keys(rosters).sort().forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    ui.lineupList.appendChild(opt);
+  });
+
+  const savedTactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+  const allTactics = { ...DEFAULT_TACTICS, ...savedTactics };
+  ui.posList.innerHTML = '<option value="">Select Position...</option>';
+  Object.keys(allTactics).sort().forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    ui.posList.appendChild(opt);
+  });
+}
+
+function saveLineup(key = "volleyballer_lineup", silent = false) {
+  const data = players.map(p => ({
+    label: p.userData.label,
+    height: p.userData.height
+  }));
+  
+  if (key === "NAMED") {
+    const name = ui.lineupName.value.trim();
+    if (!name) return alert("Please enter a name for the lineup.");
+    const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+    rosters[name] = data;
+    localStorage.setItem("volleyballer_rosters", JSON.stringify(rosters));
+    ui.lineupName.value = "";
+    refreshDropdowns();
+    alert(`Lineup "${name}" saved!`);
+  } else {
+    localStorage.setItem(key, JSON.stringify(data));
+    if (!silent) alert("Lineup saved!");
+  }
+}
+
+function loadLineup(key = "volleyballer_lineup", silent = false) {
+  let data = null;
+  if (key === "NAMED") {
+    const name = ui.lineupList.value;
+    if (!name) return alert("Please select a lineup from the list.");
+    const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+    data = rosters[name];
+  } else {
+    const raw = localStorage.getItem(key);
+    if (raw) data = JSON.parse(raw);
+  }
+
+  if (!data) {
+    if (!silent) alert("No saved lineup found.");
+    return;
+  }
+
+  data.forEach((d, i) => {
+    if (players[i]) {
+      updatePlayerLabel(players[i], d.label, true);
+      updatePlayerHeight(players[i], d.height, true);
+    }
+  });
+
+  if (selectedPlayer) {
+    ui.playerLabel.value = selectedPlayer.userData.label;
+    ui.pHeight.value = selectedPlayer.userData.height;
+    ui.pHeightVal.textContent = selectedPlayer.userData.height.toFixed(2) + "m";
+  }
+  updateBlockShadow();
+  updatePlayerRotations();
+}
+
+function deleteLineup() {
+  const name = ui.lineupList.value;
+  if (!name) return;
+  if (confirm(`Delete lineup "${name}"?`)) {
+    const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+    delete rosters[name];
+    localStorage.setItem("volleyballer_rosters", JSON.stringify(rosters));
+    refreshDropdowns();
+  }
+}
+
+function savePositions(key = "volleyballer_positions", silent = false) {
+  const data = {
+    players: players.map(p => ({
+      x: p.position.x,
+      z: p.position.z
+    })),
+    ball: { x: ball.position.x, z: ball.position.z },
+    target: { x: attackTarget.position.x, z: attackTarget.position.z },
+    physics: {
+      height: ui.contactHeight.value,
+      power: ui.attackPower.value
+    }
+  };
+
+  if (key === "NAMED") {
+    const name = ui.posName.value.trim();
+    if (!name) return alert("Please enter a name for the tactical position.");
+    const tactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+    tactics[name] = data;
+    localStorage.setItem("volleyballer_tactics", JSON.stringify(tactics));
+    ui.posName.value = "";
+    refreshDropdowns();
+    alert(`Position "${name}" saved!`);
+  } else {
+    localStorage.setItem(key, JSON.stringify(data));
+    if (!silent && key === "volleyballer_positions") alert("Position and settings saved!");
+  }
+}
+
+function loadPositions(key = "volleyballer_positions") {
+  let data = null;
+  if (key === "NAMED") {
+    const name = ui.posList.value;
+    if (!name) return alert("Please select a position from the list.");
+    
+    // Check defaults first, then localStorage
+    if (DEFAULT_TACTICS[name]) {
+      data = DEFAULT_TACTICS[name];
+    } else {
+      const tactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+      data = tactics[name];
+    }
+  } else {
+    const raw = localStorage.getItem(key);
+    if (raw) data = JSON.parse(raw);
+  }
+
+  if (data) applyTacticalState(data);
+}
+
+function deletePosition() {
+  const name = ui.posList.value;
+  if (!name) return;
+  if (DEFAULT_TACTICS[name]) {
+    return alert("Default tactical presets cannot be deleted.");
+  }
+  if (confirm(`Delete position "${name}"?`)) {
+    const tactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+    delete tactics[name];
+    localStorage.setItem("volleyballer_tactics", JSON.stringify(tactics));
+    refreshDropdowns();
+  }
+}
+
+function saveLastKnown() {
+  saveLineup("volleyballer_lastLineup", true);
+  savePositions("volleyballer_lastPositions", true);
 }
 
 const players = [
@@ -622,6 +863,7 @@ function resetPlayerPositions() {
   updatePlayerRotations();
   updateAttackIndicator();
   updateBlockShadow();
+  saveLastKnown();
 }
 
 // Ball with realistic volleyball look
@@ -971,6 +1213,10 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     return;
   }
   
+  // Prevent OrbitControls (and other listeners) from initiating
+  event.stopImmediatePropagation();
+  controls.enabled = false;
+  
   activeDrag = hits[0].object;
   while (activeDrag.parent && !draggable.includes(activeDrag)) {
     activeDrag = activeDrag.parent;
@@ -982,6 +1228,8 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     selectedPlayer = activeDrag;
     ui.playerUI.style.display = "block";
     ui.playerLabel.value = selectedPlayer.userData.label;
+    ui.pHeight.value = selectedPlayer.userData.height;
+    ui.pHeightVal.textContent = selectedPlayer.userData.height.toFixed(2) + "m";
     selectionRing.visible = true;
     selectionRing.position.x = selectedPlayer.position.x;
     selectionRing.position.z = selectedPlayer.position.z;
@@ -995,8 +1243,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   dragPlane.set(new THREE.Vector3(0, 1, 0), -dragHeight);
   raycaster.ray.intersectPlane(dragPlane, dragPoint);
   dragOffset.copy(activeDrag.position).sub(dragPoint);
-  controls.enabled = false;
-});
+}, { capture: true });
 
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (activeDrag && !paintMode) {
@@ -1037,11 +1284,37 @@ renderer.domElement.addEventListener("pointermove", (event) => {
   }
 });
 
+function getFullStateJSON() {
+  const data = {
+    players: players.map((p, i) => ({
+      pos: i + 1,
+      x: parseFloat(p.position.x.toFixed(2)),
+      z: parseFloat(p.position.z.toFixed(2))
+    })),
+    ball: { 
+      x: parseFloat(ball.position.x.toFixed(2)), 
+      z: parseFloat(ball.position.z.toFixed(2)) 
+    },
+    target: { 
+      x: parseFloat(attackTarget.position.x.toFixed(2)), 
+      z: parseFloat(attackTarget.position.z.toFixed(2)) 
+    },
+    physics: {
+      height: ui.contactHeight.value,
+      power: ui.attackPower.value
+    }
+  };
+  return JSON.stringify(data, null, 2);
+}
+
 renderer.domElement.addEventListener("pointerup", () => {
-  if (!activeDrag) return;
+  if (!activeDrag && !painting) return;
+  
   activeDrag = null;
-  renderer.domElement.style.cursor = "default";
+  painting = false;
+  renderer.domElement.style.cursor = paintMode ? "crosshair" : "default";
   controls.enabled = !paintMode;
+  saveLastKnown();
 });
 
 // Paint zones
@@ -1055,7 +1328,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   });
   scene.add(currentZone);
   zones.push(currentZone);
-});
+}, { capture: true });
 
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (!paintMode || !painting || !currentZone || !zoneStart) return;
@@ -1126,6 +1399,7 @@ ui.contactHeight.addEventListener("input", (e) => {
   updateAttackIndicator();
   updatePlayerRotations();
   updateBlockShadow();
+  saveLastKnown();
 });
 
 ui.attackPower.addEventListener("input", (e) => {
@@ -1138,6 +1412,7 @@ ui.attackPower.addEventListener("input", (e) => {
   ui.powerValue.textContent = label;
 
   updateAttackIndicator();
+  saveLastKnown();
 });
 
 ui.playerLabel.addEventListener("input", (event) => {
@@ -1146,8 +1421,70 @@ ui.playerLabel.addEventListener("input", (event) => {
   }
 });
 
+ui.pHeight.addEventListener("input", (e) => {
+  if (selectedPlayer) {
+    const val = parseFloat(e.target.value);
+    ui.pHeightVal.textContent = val.toFixed(2) + "m";
+    updatePlayerHeight(selectedPlayer, val);
+  }
+});
+
+ui.saveLineup.addEventListener("click", () => saveLineup("NAMED"));
+ui.loadLineup.addEventListener("click", () => loadLineup("NAMED"));
+ui.deleteLineup.addEventListener("click", deleteLineup);
+
+ui.savePos.addEventListener("click", () => savePositions("NAMED"));
+ui.loadPos.addEventListener("click", () => loadPositions("NAMED"));
+ui.deletePos.addEventListener("click", deletePosition);
+
+refreshDropdowns();
+
+function applyTacticalState(data) {
+  if (data.players) {
+    data.players.forEach((d, i) => {
+      if (players[i]) {
+        players[i].position.set(d.x, players[i].userData.dragHeight, d.z);
+        setPlayerStance(players[i], d.z > -1.5);
+      }
+    });
+  }
+  if (data.ball) {
+    ball.position.x = data.ball.x;
+    ball.position.z = data.ball.z;
+  }
+  if (data.target) {
+    attackTarget.position.x = data.target.x;
+    attackTarget.position.z = data.target.z;
+  }
+  if (data.physics) {
+    ui.contactHeight.value = data.physics.height;
+    ui.attackPower.value = data.physics.power;
+    ui.contactHeight.dispatchEvent(new Event('input'));
+    ui.attackPower.dispatchEvent(new Event('input'));
+  }
+  updateBlockShadow();
+  updatePlayerRotations();
+  updateAttackIndicator();
+  saveLastKnown();
+}
+
 setPaintMode(false);
-resetPlayerPositions();
+
+// Auto-load last session state (auto-saved) if available
+if (localStorage.getItem("volleyballer_lastLineup")) {
+  loadLineup("volleyballer_lastLineup", true);
+} else if (localStorage.getItem("volleyballer_lineup")) {
+  loadLineup("volleyballer_lineup", true);
+}
+
+// Important: Load lineup BEFORE loading positions
+if (localStorage.getItem("volleyballer_lastPositions")) {
+  loadPositions("volleyballer_lastPositions");
+} else if (localStorage.getItem("volleyballer_positions")) {
+  loadPositions("volleyballer_positions");
+} else {
+  resetPlayerPositions();
+}
 
 // Initial labels for attack physics
 ui.heightValue.textContent = "High";
