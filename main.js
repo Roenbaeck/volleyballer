@@ -423,7 +423,8 @@ netBottomTape.castShadow = true;
 scene.add(netBottomTape);
 
 // Dynamic 3D character models with realistic proportions
-function createPlayer({ color, height = 1.95, label, side = "home", isBlocker = false }) {
+// Dynamic 3D character models with realistic proportions
+function createPlayer({ color, height = 1.9, label, side = "home", isBlocker = false }) {
   const group = new THREE.Group();
   
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8d4c4, roughness: 0.8 });
@@ -433,8 +434,9 @@ function createPlayer({ color, height = 1.95, label, side = "home", isBlocker = 
   const hairMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
 
   const H = height;
+  group.userData.height = H;
 
-  // Legs (50% of height)
+  // Legs
   const legH = H * 0.5;
   const legRad = H * 0.05;
   const legGeo = new THREE.CapsuleGeometry(legRad, legH - 2 * legRad, 4, 8);
@@ -461,15 +463,16 @@ function createPlayer({ color, height = 1.95, label, side = "home", isBlocker = 
   rightShoe.castShadow = true;
   group.add(rightShoe);
 
-  // Torso (35% of height)
+  // Torso
   const torsoH = H * 0.38;
   const torsoGeo = new THREE.CylinderGeometry(H * 0.13, H * 0.1, torsoH, 8);
   const torso = new THREE.Mesh(torsoGeo, jerseyMat);
+  torso.name = "torso";
   torso.position.y = legH + torsoH * 0.5;
   torso.castShadow = true;
   group.add(torso);
 
-  // Head (center at ~93% height)
+  // Head
   const headGroup = new THREE.Group();
   const headRad = H * 0.075;
   headGroup.position.y = H - headRad;
@@ -483,74 +486,90 @@ function createPlayer({ color, height = 1.95, label, side = "home", isBlocker = 
   hair.rotation.x = -0.2;
   headGroup.add(hair);
 
-  // Arms (shoulder at ~85% height)
+  // Arms
   const armLen = H * 0.45;
   const armRad = H * 0.04;
   const armGeo = new THREE.CapsuleGeometry(armRad, armLen - 2 * armRad, 4, 8);
   const leftArm = new THREE.Mesh(armGeo, skinMat);
+  leftArm.name = "leftArm";
   const rightArm = new THREE.Mesh(armGeo, skinMat);
+  rightArm.name = "rightArm";
   
-  const shoulderY = H * 0.82;
-  const shoulderWidth = H * 0.18;
-
-  if (isBlocker) {
-    // Arms UP - narrower and straighter for better block formation
-    leftArm.position.set(-shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
-    leftArm.rotation.z = 0.03;
-    rightArm.position.set(shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
-    rightArm.rotation.z = -0.03;
-  } else {
-    // Arms forward (crouch/defense)
-    leftArm.position.set(-shoulderWidth, shoulderY - armLen * 0.2, H * 0.1);
-    leftArm.rotation.x = -1.2;
-    leftArm.rotation.z = 0.2;
-    rightArm.position.set(shoulderWidth, shoulderY - armLen * 0.2, H * 0.1);
-    rightArm.rotation.x = -1.2;
-    rightArm.rotation.z = -0.2;
-  }
   leftArm.castShadow = true;
   rightArm.castShadow = true;
   group.add(leftArm, rightArm);
 
-  // Floating label
+  // Label
   const labelCanvas = document.createElement("canvas");
   labelCanvas.width = 120;
   labelCanvas.height = 60;
   const lctx = labelCanvas.getContext("2d");
   lctx.fillStyle = "rgba(0,0,0,0.6)";
   lctx.beginPath();
-  if (lctx.roundRect) {
-    lctx.roundRect(0, 0, 120, 60, 12);
-  } else {
-    lctx.rect(0, 0, 120, 60);
-  }
+  if (lctx.roundRect) lctx.roundRect(0, 0, 120, 60, 12); else lctx.rect(0, 0, 120, 60);
   lctx.fill();
   lctx.fillStyle = "white";
-  lctx.font = "bold 30px sans-serif";
+  lctx.font = "bold 34px sans-serif";
   lctx.textAlign = "center";
   lctx.textBaseline = "middle";
   lctx.fillText(label, 60, 30);
   
   const labelTex = new THREE.CanvasTexture(labelCanvas);
   const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true }));
-  labelSprite.position.y = H + 0.25;
+  labelSprite.name = "labelSprite";
   labelSprite.scale.set(0.8, 0.4, 1);
   group.add(labelSprite);
 
-  const jumpOffset = isBlocker ? 0.4 : 0;
-  group.userData = {
-    label,
-    side,
-    dragHeight: jumpOffset,
-    jumpOffset,
-    kind: "player"
-  };
+  group.userData = { label, side, kind: "player" };
+  setPlayerStance(group, isBlocker);
   return group;
+}
+
+function setPlayerStance(player, isBlocker) {
+  player.userData.isBlocker = isBlocker;
+  const H = player.userData.height || 1.9;
+  const armLen = H * 0.45;
+  const shoulderY = H * 0.82;
+  const shoulderWidth = H * 0.18;
+  
+  const leftArm = player.getObjectByName("leftArm");
+  const rightArm = player.getObjectByName("rightArm");
+  const torso = player.getObjectByName("torso");
+  const labelSprite = player.getObjectByName("labelSprite");
+  
+  if (torso) {
+    torso.material = new THREE.MeshStandardMaterial({ 
+      color: isBlocker ? 0x1565c0 : 0x2e7d32, 
+      roughness: 0.4, 
+      metalness: 0.1 
+    });
+  }
+
+  if (leftArm && rightArm) {
+    if (isBlocker) {
+      leftArm.position.set(-shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
+      leftArm.rotation.set(0, 0, 0.03);
+      rightArm.position.set(shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
+      rightArm.rotation.set(0, 0, -0.03);
+      player.userData.dragHeight = 0.4;
+    } else {
+      leftArm.position.set(-shoulderWidth, shoulderY - armLen * 0.2, H * 0.1);
+      leftArm.rotation.set(-1.2, 0, 0.2);
+      rightArm.position.set(shoulderWidth, shoulderY - armLen * 0.2, H * 0.1);
+      rightArm.rotation.set(-1.2, 0, -0.2);
+      player.userData.dragHeight = 0;
+    }
+  }
+  
+  if (labelSprite) {
+    labelSprite.position.y = H + 0.25 + (isBlocker ? 0.4 : 0);
+  }
+  player.position.y = player.userData.dragHeight;
 }
 
 function updatePlayerLabel(player, text) {
   player.userData.label = text;
-  const labelSprite = player.children.find(c => c.type === "Sprite");
+  const labelSprite = player.getObjectByName("labelSprite");
   if (!labelSprite) return;
 
   const canvas = labelSprite.material.map.image;
@@ -559,14 +578,10 @@ function updatePlayerLabel(player, text) {
   
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.beginPath();
-  if (ctx.roundRect) {
-    ctx.roundRect(0, 0, 120, 60, 12);
-  } else {
-    ctx.rect(0, 0, 120, 60);
-  }
+  if (ctx.roundRect) ctx.roundRect(0, 0, 120, 60, 12); else ctx.rect(0, 0, 120, 60);
   ctx.fill();
   ctx.fillStyle = "white";
-  ctx.font = "bold 30px sans-serif";
+  ctx.font = "bold 34px sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(text, 60, 30);
@@ -574,23 +589,39 @@ function updatePlayerLabel(player, text) {
   labelSprite.material.map.needsUpdate = true;
 }
 
-const blockers = [
-  createPlayer({ color: 0x1565c0, label: "BL", side: "home", isBlocker: true, height: 2.05 }),
-  createPlayer({ color: 0x1565c0, label: "BR", side: "home", isBlocker: true, height: 2.05 })
+const players = [
+  createPlayer({ label: "1", side: "home", height: 1.90 }),
+  createPlayer({ label: "2", side: "home", height: 1.90 }),
+  createPlayer({ label: "3", side: "home", height: 1.90 }),
+  createPlayer({ label: "4", side: "home", height: 1.90 }),
+  createPlayer({ label: "5", side: "home", height: 1.90 }),
+  createPlayer({ label: "6", side: "home", height: 1.90 })
 ];
-blockers[0].position.set(-1.2, blockers[0].userData.dragHeight, -0.6);
-blockers[1].position.set(1.2, blockers[1].userData.dragHeight, -0.6);
 
-const defenders = [
-  createPlayer({ color: 0x2e7d32, label: "L", side: "home", height: 1.78 }),
-  createPlayer({ color: 0x2e7d32, label: "D2", side: "home", height: 1.95 }),
-  createPlayer({ color: 0x2e7d32, label: "D3", side: "home", height: 1.95 }),
-  createPlayer({ color: 0x2e7d32, label: "S", side: "home", height: 1.88 })
-];
-defenders[0].position.set(-2.5, defenders[0].userData.dragHeight, -5.5);
-defenders[1].position.set(0, defenders[1].userData.dragHeight, -6.4);
-defenders[2].position.set(2.7, defenders[2].userData.dragHeight, -5.6);
-defenders[3].position.set(0, defenders[3].userData.dragHeight, -2.8);
+function resetPlayerPositions() {
+  players[0].position.set(3.0, players[0].userData.dragHeight, -6.0);  // Pos 1
+  players[1].position.set(3.0, players[1].userData.dragHeight, -0.6);  // Pos 2
+  players[2].position.set(0.0, players[2].userData.dragHeight, -0.6);  // Pos 3
+  players[3].position.set(-3.0, players[3].userData.dragHeight, -0.6); // Pos 4
+  players[4].position.set(-3.0, players[4].userData.dragHeight, -6.0); // Pos 5
+  players[5].position.set(0.0, players[5].userData.dragHeight, -7.0);  // Pos 6
+  
+  players.forEach(p => {
+    const isAtNet = p.position.z > -1.5;
+    setPlayerStance(p, isAtNet);
+  });
+
+  ball.position.set(0, 3, 4);
+  
+  if (selectedPlayer) {
+    selectionRing.position.x = selectedPlayer.position.x;
+    selectionRing.position.z = selectedPlayer.position.z;
+  }
+  
+  updatePlayerRotations();
+  updateAttackIndicator();
+  updateBlockShadow();
+}
 
 // Ball with realistic volleyball look
 const ballTexture = (() => {
@@ -651,8 +682,8 @@ ball.position.set(0, 3, 4);
 ball.castShadow = true;
 ball.userData = { side: "away", dragHeight: 3, kind: "ball" };
 
-const allPlayers = [...blockers, ...defenders, ball];
-scene.add(...blockers, ...defenders, ball);
+const allPlayers = [...players, ball];
+scene.add(...players, ball);
 
 // Block shadow (wedge from blocker occlusion)
 const shadowMat = new THREE.MeshBasicMaterial({ 
@@ -742,8 +773,9 @@ function createZoneMesh({ color, type }) {
   const material = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: type === "undefended" ? 0.9 : 0.75,
-    side: THREE.DoubleSide
+    opacity: type === "undefended" ? 0.92 : 0.82,
+    side: THREE.DoubleSide,
+    depthWrite: false
   });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), material);
   mesh.rotation.x = -Math.PI / 2;
@@ -786,7 +818,7 @@ function updateAttackIndicator() {
 function updatePlayerRotations() {
   const ballPos = ball.position.clone();
 
-  [...blockers, ...defenders].forEach(player => {
+  players.forEach(player => {
     // Determine target point: projected ball position at player's height
     // This ensures they rotate only on the Y-axis
     const target = new THREE.Vector3(ballPos.x, player.position.y, ballPos.z);
@@ -806,8 +838,9 @@ function updateBlockShadow() {
 
   const allPositions = [];
 
-  blockers.forEach((blocker) => {
-    const bPos = blocker.position.clone();
+  players.forEach((player) => {
+    if (!player.userData.isBlocker) return;
+    const bPos = player.position.clone();
     bPos.y = 0;
 
     const toBlocker = bPos.clone().sub(ballPos);
@@ -833,11 +866,16 @@ function updateBlockShadow() {
     );
   });
 
-  if (allPositions.length === 0) return;
+  if (allPositions.length === 0) {
+    blockShadow.geometry.dispose();
+    blockShadow.geometry = new THREE.BufferGeometry();
+    return;
+  }
 
   const positions = new Float32Array(allPositions);
   const indices = [];
-  for (let i = 0; i < blockers.length; i++) {
+  const activeBlockers = players.filter(p => p.userData.isBlocker).length;
+  for (let i = 0; i < activeBlockers; i++) {
     const base = i * 4;
     indices.push(base, base + 1, base + 2, base + 2, base + 3, base);
   }
@@ -911,6 +949,14 @@ renderer.domElement.addEventListener("pointermove", (event) => {
   activeDrag.position.set(dragPoint.x + dragOffset.x, dragHeight, dragPoint.z + dragOffset.z);
   clampToCourt(activeDrag);
   
+  // Proximity-based stance switching
+  if (activeDrag.userData.kind === "player") {
+    const isAtNet = activeDrag.position.z > -1.5;
+    if (activeDrag.userData.isBlocker !== isAtNet) {
+      setPlayerStance(activeDrag, isAtNet);
+    }
+  }
+
   if (selectedPlayer === activeDrag) {
     selectionRing.position.x = activeDrag.position.x;
     selectionRing.position.z = activeDrag.position.z;
@@ -982,22 +1028,7 @@ ui.clearZones.addEventListener("click", () => {
 });
 
 ui.resetPlayers.addEventListener("click", () => {
-  blockers[0].position.set(-1.2, blockers[0].userData.dragHeight, -0.6);
-  blockers[1].position.set(1.2, blockers[1].userData.dragHeight, -0.6);
-  defenders[0].position.set(-2.5, defenders[0].userData.dragHeight, -5.5);
-  defenders[1].position.set(0, defenders[1].userData.dragHeight, -6.4);
-  defenders[2].position.set(2.7, defenders[2].userData.dragHeight, -5.6);
-  defenders[3].position.set(0, defenders[3].userData.dragHeight, -2.8);
-  ball.position.set(0, 3, 4);
-  
-  if (selectedPlayer) {
-    selectionRing.position.x = selectedPlayer.position.x;
-    selectionRing.position.z = selectedPlayer.position.z;
-  }
-  
-  updatePlayerRotations();
-  updateAttackIndicator();
-  updateBlockShadow();
+  resetPlayerPositions();
 });
 
 ui.playerLabel.addEventListener("input", (event) => {
@@ -1007,9 +1038,7 @@ ui.playerLabel.addEventListener("input", (event) => {
 });
 
 setPaintMode(false);
-updatePlayerRotations();
-updateAttackIndicator();
-updateBlockShadow();
+resetPlayerPositions();
 
 // Resize
 addEventListener("resize", () => {
@@ -1029,10 +1058,7 @@ function animate() {
   
   controls.update();
 
-  blockers.forEach((player) => {
-    player.position.y = player.userData.dragHeight ?? 0;
-  });
-  defenders.forEach((player) => {
+  players.forEach((player) => {
     player.position.y = player.userData.dragHeight ?? 0;
   });
   attackTarget.position.y = 0.06;
