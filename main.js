@@ -14,7 +14,11 @@ const ui = {
   clearZones: document.getElementById("clearZones"),
   resetPlayers: document.getElementById("resetPlayers"),
   playerUI: document.getElementById("playerUI"),
-  playerLabel: document.getElementById("playerLabel")
+  playerLabel: document.getElementById("playerLabel"),
+  contactHeight: document.getElementById("contactHeight"),
+  heightValue: document.getElementById("heightValue"),
+  attackPower: document.getElementById("attackPower"),
+  powerValue: document.getElementById("powerValue")
 };
 
 let selectedPlayer = null;
@@ -806,16 +810,22 @@ function updateAttackIndicator() {
   const midX = (start.x + end.x) / 2;
   const midZ = (start.z + end.z) / 2;
   
+  // Power scales arc height (Higher power = flatter arc, Lower power = loopy dink)
+  const powerFactor = parseInt(ui.attackPower.value) / 100;
+  const arcBoost = (1.0 - powerFactor) * dist * 0.4; // Low power adds significant height
+  
   const crossesNet = (start.z * end.z) <= 0;
   const basePeak = Math.max(start.y, end.y);
-  const arcHeight = crossesNet ? Math.max(basePeak, 2.7) : basePeak + dist * 0.15;
+  const minNetClearance = 2.55; 
+  const arcHeight = (crossesNet ? Math.max(basePeak, minNetClearance) : basePeak) + arcBoost;
   
-  const control = new THREE.Vector3(midX, arcHeight + (dist * 0.1), midZ);
+  // Control point for quadratic curve
+  const control = new THREE.Vector3(midX, arcHeight + 0.2, midZ);
   const curve = new THREE.QuadraticBezierCurve3(start, control, end);
   
   // Re-generate tube geometry for thickness
   attackLine.geometry.dispose();
-  attackLine.geometry = new THREE.TubeGeometry(curve, 24, 0.04, 8, false);
+  attackLine.geometry = new THREE.TubeGeometry(curve, 32, 0.04, 8, false);
 }
 
 function updatePlayerRotations() {
@@ -1101,6 +1111,35 @@ ui.resetPlayers.addEventListener("click", () => {
   resetPlayerPositions();
 });
 
+ui.contactHeight.addEventListener("input", (e) => {
+  const val = parseFloat(e.target.value);
+  ball.position.y = val;
+  ball.userData.dragHeight = ball.position.y;
+  
+  let label = "Medium";
+  if (val < 1.6) label = "Underhand";
+  else if (val < 2.3) label = "Low";
+  else if (val > 3.3) label = "Extreme";
+  else if (val > 2.8) label = "High";
+  ui.heightValue.textContent = label;
+
+  updateAttackIndicator();
+  updatePlayerRotations();
+  updateBlockShadow();
+});
+
+ui.attackPower.addEventListener("input", (e) => {
+  const val = parseInt(e.target.value);
+  
+  let label = "Normal";
+  if (val < 25) label = "Free";
+  else if (val < 50) label = "Weak";
+  else if (val > 85) label = "Strong";
+  ui.powerValue.textContent = label;
+
+  updateAttackIndicator();
+});
+
 ui.playerLabel.addEventListener("input", (event) => {
   if (selectedPlayer) {
     updatePlayerLabel(selectedPlayer, event.target.value.toUpperCase());
@@ -1109,6 +1148,10 @@ ui.playerLabel.addEventListener("input", (event) => {
 
 setPaintMode(false);
 resetPlayerPositions();
+
+// Initial labels for attack physics
+ui.heightValue.textContent = "High";
+ui.powerValue.textContent = "Normal";
 
 // Resize
 addEventListener("resize", () => {
