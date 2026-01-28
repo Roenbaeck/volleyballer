@@ -51,7 +51,7 @@ scene.fog = new THREE.FogExp2(0x0a1520, 0.012);
 
 // Camera
 const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 200);
-camera.position.set(0, 16, 22);
+camera.position.set(0, 16, -22);
 camera.lookAt(0, 0, 0);
 
 // Renderer
@@ -598,11 +598,11 @@ const players = [
 ];
 
 function resetPlayerPositions() {
-  players[0].position.set(3.0, players[0].userData.dragHeight, -6.0);  // Pos 1
-  players[1].position.set(3.0, players[1].userData.dragHeight, -0.6);  // Pos 2
+  players[0].position.set(-3.0, players[0].userData.dragHeight, -6.0); // Pos 5
+  players[1].position.set(-3.0, players[1].userData.dragHeight, -0.6); // Pos 4
   players[2].position.set(0.0, players[2].userData.dragHeight, -0.6);  // Pos 3
-  players[3].position.set(-3.0, players[3].userData.dragHeight, -0.6); // Pos 4
-  players[4].position.set(-3.0, players[4].userData.dragHeight, -6.0); // Pos 5
+  players[3].position.set(3.0, players[3].userData.dragHeight, -0.6);  // Pos 2
+  players[4].position.set(3.0, players[4].userData.dragHeight, -6.0);  // Pos 1
   players[5].position.set(0.0, players[5].userData.dragHeight, -7.0);  // Pos 6
   
   players.forEach(p => {
@@ -698,11 +698,9 @@ blockShadow.position.set(0, 0, 0);
 blockShadow.renderOrder = -1;
 scene.add(blockShadow);
 
-// Attack indicator (glowing)
-const attackLineMat = new THREE.MeshBasicMaterial({ 
-  color: 0x8b00ff
-});
-let attackLine = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1, 8), attackLineMat);
+// Attack indicator (arced tube)
+const attackLineMat = new THREE.MeshBasicMaterial({ color: 0x8b00ff });
+let attackLine = new THREE.Mesh(new THREE.BufferGeometry(), attackLineMat);
 scene.add(attackLine);
 
 const attackTarget = new THREE.Mesh(
@@ -805,13 +803,21 @@ function clampToCourt(object) {
 function updateAttackIndicator() {
   const start = ball.position.clone();
   const end = attackTarget.position.clone();
-  const mid = start.clone().add(end).multiplyScalar(0.5);
-  const length = start.distanceTo(end);
-  const dir = end.clone().sub(start).normalize();
   
-  attackLine.position.copy(mid);
-  attackLine.scale.set(1, length, 1);
-  attackLine.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  const dist = start.distanceTo(end);
+  const midX = (start.x + end.x) / 2;
+  const midZ = (start.z + end.z) / 2;
+  
+  const crossesNet = (start.z * end.z) <= 0;
+  const basePeak = Math.max(start.y, end.y);
+  const arcHeight = crossesNet ? Math.max(basePeak, 2.7) : basePeak + dist * 0.15;
+  
+  const control = new THREE.Vector3(midX, arcHeight + (dist * 0.1), midZ);
+  const curve = new THREE.QuadraticBezierCurve3(start, control, end);
+  
+  // Re-generate tube geometry for thickness
+  attackLine.geometry.dispose();
+  attackLine.geometry = new THREE.TubeGeometry(curve, 24, 0.04, 8, false);
 }
 
 function updatePlayerRotations() {
