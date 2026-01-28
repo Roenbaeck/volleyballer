@@ -22,6 +22,7 @@ const ui = {
   attackPower: document.getElementById("attackPower"),
   powerValue: document.getElementById("powerValue"),
   mergeShadows: document.getElementById("mergeShadows"),
+  netShadowToggle: document.getElementById("netShadowToggle"),
 
   saveLineup: document.getElementById("saveLineup"),
   loadLineup: document.getElementById("loadLineup"),
@@ -944,6 +945,18 @@ blockShadow.position.set(0, 0, 0);
 blockShadow.renderOrder = -1;
 scene.add(blockShadow);
 
+// Net shadow (dead zone where hard hits can't reach)
+const netShadowMat = new THREE.MeshBasicMaterial({ 
+  color: 0x000000, 
+  transparent: true, 
+  opacity: 0.45, 
+  side: THREE.DoubleSide,
+  depthWrite: false
+});
+const netShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), netShadowMat);
+netShadow.renderOrder = -1;
+scene.add(netShadow);
+
 // Attack indicator (arced tube)
 const attackLineMat = new THREE.MeshBasicMaterial({ color: 0x8b00ff });
 let attackLine = new THREE.Mesh(new THREE.BufferGeometry(), attackLineMat);
@@ -1196,6 +1209,63 @@ function updateBlockShadow() {
   blockShadow.geometry = geometry;
 }
 
+function updateNetShadow() {
+  if (!ui.netShadowToggle || !ui.netShadowToggle.checked) {
+    netShadow.geometry.dispose();
+    netShadow.geometry = new THREE.BufferGeometry();
+    return;
+  }
+
+  const b = ball.position.clone();
+  const H_net = 2.43;
+
+  // Only show shadow if ball is in the attacking half (z > 0)
+  if (b.z < 0) {
+    netShadow.geometry.dispose();
+    netShadow.geometry = new THREE.BufferGeometry();
+    return;
+  }
+
+  // Account for "Power" - lower power means more arc, which reduces the dead zone
+  const distToNet = b.z;
+  const powerFactor = parseInt(ui.attackPower.value) / 100;
+  const arcBoost = (1.0 - powerFactor) * distToNet * 0.4;
+  const effectiveHeight = b.y + arcBoost;
+
+  let z_s, x_s1, x_s2;
+
+  if (effectiveHeight > H_net + 0.01) {
+    z_s = (H_net * b.z) / (H_net - effectiveHeight);
+    const t = effectiveHeight / (effectiveHeight - H_net);
+    x_s1 = b.x + t * (-4.5 - b.x);
+    x_s2 = b.x + t * (4.5 - b.x);
+    
+    z_s = Math.max(z_s, -20);
+  } else {
+    // Ball (even with arc) cannot clear the net
+    z_s = -20;
+    x_s1 = -40;
+    x_s2 = 40;
+  }
+
+  const allPositions = [
+    -4.5, 0.005, 0,
+     4.5, 0.005, 0,
+     x_s2, 0.005, z_s,
+     x_s1, 0.005, z_s
+  ];
+
+  const positions = new Float32Array(allPositions);
+  const indices = [0, 1, 2, 2, 3, 0];
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  netShadow.geometry.dispose();
+  netShadow.geometry = geometry;
+}
+
 // Dragging (custom ground-plane drag)
 const draggable = [...allPlayers, attackTarget];
 let activeDrag = null;
@@ -1279,6 +1349,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     updatePlayerRotations();
     updateAttackIndicator();
     updateBlockShadow();
+    updateNetShadow();
     return;
   }
 
@@ -1408,6 +1479,7 @@ ui.contactHeight.addEventListener("input", (e) => {
   updateAttackIndicator();
   updatePlayerRotations();
   updateBlockShadow();
+  updateNetShadow();
   saveLastKnown();
 });
 
@@ -1421,11 +1493,17 @@ ui.attackPower.addEventListener("input", (e) => {
   ui.powerValue.textContent = label;
 
   updateAttackIndicator();
+  updateNetShadow();
   saveLastKnown();
 });
 
 ui.mergeShadows.addEventListener("change", () => {
   updateBlockShadow();
+  saveLastKnown();
+});
+
+ui.netShadowToggle.addEventListener("change", () => {
+  updateNetShadow();
   saveLastKnown();
 });
 
@@ -1477,10 +1555,14 @@ function applyTacticalState(data) {
     if (data.physics.mergeShadows !== undefined) {
       ui.mergeShadows.checked = data.physics.mergeShadows;
     }
+    if (data.physics.netShadow !== undefined) {
+      ui.netShadowToggle.checked = data.physics.netShadow;
+    }
     ui.contactHeight.dispatchEvent(new Event('input'));
     ui.attackPower.dispatchEvent(new Event('input'));
   }
   updateBlockShadow();
+  updateNetShadow();
   updatePlayerRotations();
   updateAttackIndicator();
   saveLastKnown();
@@ -1502,7 +1584,8 @@ function generateShareUrl() {
       ph: {
         h: ui.contactHeight.value,
         pw: ui.attackPower.value,
-        ms: ui.mergeShadows.checked
+        ms: ui.mergeShadows.checked,
+        ns: ui.netShadowToggle.checked
       }
     }
   };
@@ -1547,7 +1630,8 @@ function loadFromUrl() {
         physics: {
           height: state.t.ph.h,
           power: state.t.ph.pw,
-          mergeShadows: state.t.ph.ms
+          mergeShadows: state.t.ph.ms,
+          netShadow: state.t.ph.ns
         }
       };
       applyTacticalState(legacyData);

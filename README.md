@@ -17,6 +17,7 @@ A high-performance, 3D interactive tactics board for volleyball coaches and play
   - **Blockers (Blue)**: Automatically switch to a blocking stance (arms up, jumping) when near the net.
   - **Defenders (Green)**: Switch to a crouched defensive stance when moving to the back court.
 - **Dynamic Block Shadows**: Physically accurate shadow "wedges" that adapt to the ball's position. Multiple blockers close together automatically form a unified tactical wedge.
+- **Net Dead-Zone Shadow**: Visualizes the area of the court that is unreachable by straight-line hits due to the net's height. This "shadow" dynamically updates based on the ball's distance from the net, its contact height, and the set **Attack Power** (lower power simulates a steeper arc, reducing the dead zone).
 - **Advanced Attack Simulation**: Realistic parabolic ball flight paths with adjustable contact height and attack power.
 - **Tactical Painting**: Draw custom zones on the court with adjustable colors.
 - **Editable Labels**: Mark player roles (S, OH, MB, etc.) with dynamic sprite labels.
