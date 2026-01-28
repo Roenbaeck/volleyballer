@@ -1065,6 +1065,7 @@ function setPaintMode(active) {
   paintMode = active;
   controls.enabled = !active;
   renderer.domElement.style.cursor = active ? "crosshair" : "default";
+  if (!active) hideZoneNodes();
 }
 
 function worldPointFromEvent(event) {
@@ -1081,14 +1082,77 @@ function createZoneMesh({ color }) {
   const material = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: 0.82,
+    opacity: 0.65,
     side: THREE.DoubleSide,
     depthWrite: false
   });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), material);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.015;
+  
+  const geometry = new THREE.BufferGeometry();
+  // 4 vertices for a quad
+  const vertices = new Float32Array(12); // 4 points * 3 components
+  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+  
+  // 2 triangles (counter-clockwise)
+  const indices = [0, 1, 2, 0, 2, 3];
+  geometry.setIndex(indices);
+  
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.userData.kind = "zone";
+  mesh.userData.corners = [
+    new THREE.Vector3(), new THREE.Vector3(),
+    new THREE.Vector3(), new THREE.Vector3()
+  ];
+  mesh.position.y = 0.012; // Base height
   return mesh;
+}
+
+function updateZoneGeometry(zone, p1, p2, p3, p4) {
+  const pos = zone.geometry.attributes.position;
+  // We keep the geometry vertices relative to the zone mesh position (which we can leave at 0, or stick to absolute)
+  // Let's use world coordinates for corners in userData, but local in geometry.
+  // Actually, easier to keep mesh at y=0.012 and use local coords.
+  const corners = [p1, p2, p3, p4];
+  zone.userData.corners = corners.map(p => p.clone());
+  
+  for (let i = 0; i < 4; i++) {
+    pos.setXYZ(i, corners[i].x, 0, corners[i].z);
+  }
+  pos.needsUpdate = true;
+  zone.geometry.computeBoundingSphere();
+}
+
+let selectedZone = null;
+const zoneNodeHandles = [];
+
+function createZoneNode(zone, index) {
+  const geo = new THREE.SphereGeometry(0.12, 16, 16);
+  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.8 });
+  const node = new THREE.Mesh(geo, mat);
+  node.userData.kind = "zoneNode";
+  node.userData.zone = zone;
+  node.userData.index = index;
+  node.position.copy(zone.userData.corners[index]);
+  node.position.y = 0.05; // Slightly above floor
+  node.renderOrder = 999;
+  return node;
+}
+
+function selectZone(zone) {
+  hideZoneNodes();
+  selectedZone = zone;
+  if (!zone) return;
+  
+  for (let i = 0; i < 4; i++) {
+    const node = createZoneNode(zone, i);
+    scene.add(node);
+    zoneNodeHandles.push(node);
+  }
+}
+
+function hideZoneNodes() {
+  zoneNodeHandles.forEach(h => scene.remove(h));
+  zoneNodeHandles.length = 0;
+  selectedZone = null;
 }
 
 function clampToCourt(object) {
@@ -1446,6 +1510,9 @@ renderer.domElement.addEventListener("pointerup", () => {
   
   activeDrag = null;
   painting = false;
+  zoneStart = null;
+  currentZone = null;
+  
   renderer.domElement.style.cursor = paintMode ? "crosshair" : "default";
   controls.enabled = !paintMode;
   saveLastKnown();
@@ -1454,6 +1521,32 @@ renderer.domElement.addEventListener("pointerup", () => {
 // Paint zones
 renderer.domElement.addEventListener("pointerdown", (event) => {
   if (!paintMode) return;
+  
+  setPointerFromEvent(event);
+  raycaster.setFromCamera(pointer, camera);
+  
+  // 1. Check handles
+  const nodeHits = raycaster.intersectObjects(zoneNodeHandles);
+  if (nodeHits.length) {
+    event.stopImmediatePropagation();
+    activeDrag = nodeHits[0].object;
+    controls.enabled = false;
+    dragPlane.set(new THREE.Vector3(0, 1, 0), -0.05);
+    raycaster.ray.intersectPlane(dragPlane, dragPoint);
+    dragOffset.copy(activeDrag.position).sub(dragPoint);
+    return;
+  }
+  
+  // 2. Check existing zones for selection
+  const zoneHits = raycaster.intersectObjects(zones);
+  if (zoneHits.length) {
+    event.stopImmediatePropagation();
+    selectZone(zoneHits[0].object);
+    return;
+  }
+  
+  // 3. New zone creation
+  hideZoneNodes();
   controls.enabled = false;
   painting = true;
   zoneStart = worldPointFromEvent(event);
@@ -1462,33 +1555,43 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   });
   scene.add(currentZone);
   zones.push(currentZone);
+  
+  // Initialize corners (needed for node visibility)
+  const p = zoneStart.clone();
+  updateZoneGeometry(currentZone, p, p.clone(), p.clone(), p.clone());
+  selectZone(currentZone);
 }, { capture: true });
 
 renderer.domElement.addEventListener("pointermove", (event) => {
-  if (!paintMode || !painting || !currentZone || !zoneStart) return;
-  const point = worldPointFromEvent(event);
-  const center = new THREE.Vector3(
-    (zoneStart.x + point.x) / 2,
-    0.02,
-    (zoneStart.z + point.z) / 2
-  );
-  const width = Math.max(0.3, Math.abs(zoneStart.x - point.x));
-  const height = Math.max(0.3, Math.abs(zoneStart.z - point.z));
-  currentZone.geometry.dispose();
-  currentZone.geometry = new THREE.PlaneGeometry(width, height);
-  currentZone.position.set(
-    THREE.MathUtils.clamp(center.x, -COURT.halfWidth + 0.2, COURT.halfWidth - 0.2),
-    0.015,
-    THREE.MathUtils.clamp(center.z, -COURT.halfLength + 0.2, COURT.halfLength - 0.2)
-  );
-});
-
-renderer.domElement.addEventListener("pointerup", () => {
   if (!paintMode) return;
-  painting = false;
-  zoneStart = null;
-  currentZone = null;
-  controls.enabled = !paintMode;
+  
+  if (activeDrag && activeDrag.userData.kind === "zoneNode") {
+    setPointerFromEvent(event);
+    raycaster.setFromCamera(pointer, camera);
+    if (raycaster.ray.intersectPlane(dragPlane, dragPoint)) {
+      activeDrag.position.set(dragPoint.x + dragOffset.x, 0.05, dragPoint.z + dragOffset.z);
+      const zone = activeDrag.userData.zone;
+      const idx = activeDrag.userData.index;
+      zone.userData.corners[idx].copy(activeDrag.position);
+      updateZoneGeometry(zone, ...zone.userData.corners);
+    }
+    return;
+  }
+  
+  if (painting && currentZone && zoneStart) {
+    const point = worldPointFromEvent(event);
+    const p1 = zoneStart.clone();
+    const p2 = new THREE.Vector3(point.x, 0, zoneStart.z);
+    const p3 = point.clone();
+    const p4 = new THREE.Vector3(zoneStart.x, 0, point.z);
+    updateZoneGeometry(currentZone, p1, p2, p3, p4);
+    
+    // Update handles to match
+    zoneNodeHandles.forEach((h, i) => {
+      h.position.copy(currentZone.userData.corners[i]);
+      h.position.y = 0.05;
+    });
+  }
 });
 
 ui.modeSwitch.addEventListener("click", (event) => {
@@ -1506,6 +1609,7 @@ ui.modeSwitch.addEventListener("click", (event) => {
 });
 
 ui.clearZones.addEventListener("click", () => {
+  hideZoneNodes();
   zones.forEach((zone) => {
     zone.geometry.dispose();
     zone.material.dispose();
