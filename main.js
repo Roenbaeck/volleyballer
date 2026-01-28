@@ -423,7 +423,6 @@ netBottomTape.castShadow = true;
 scene.add(netBottomTape);
 
 // Dynamic 3D character models with realistic proportions
-// Dynamic 3D character models with realistic proportions
 function createPlayer({ color, height = 1.9, label, side = "home", isBlocker = false }) {
   const group = new THREE.Group();
   
@@ -834,12 +833,17 @@ function updateBlockShadow() {
   const ballPos = ball.position.clone();
   ballPos.y = 0;
   const depth = 14;
-  const blockerRadius = 0.4;
 
   const allPositions = [];
 
   players.forEach((player) => {
     if (!player.userData.isBlocker) return;
+    
+    // Physical block width: roughly shoulders + arm diameters
+    // For a 1.9m player, H * 0.26 is a total span of ~50cm (radius 0.25)
+    const H = player.userData.height || 1.9;
+    const blockerRadius = H * 0.13;
+
     const bPos = player.position.clone();
     bPos.y = 0;
 
