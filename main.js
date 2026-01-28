@@ -834,52 +834,91 @@ function updateBlockShadow() {
   ballPos.y = 0;
   const depth = 14;
 
-  const allPositions = [];
-
-  players.forEach((player) => {
-    if (!player.userData.isBlocker) return;
-    
-    // Physical block width: roughly shoulders + arm diameters
-    // For a 1.9m player, H * 0.26 is a total span of ~50cm (radius 0.25)
-    const H = player.userData.height || 1.9;
-    const blockerRadius = H * 0.13;
-
-    const bPos = player.position.clone();
-    bPos.y = 0;
-
-    const toBlocker = bPos.clone().sub(ballPos);
-    if (toBlocker.lengthSq() < 0.001) return;
-
-    const dir = toBlocker.clone().normalize();
-    const perp = new THREE.Vector3(-dir.z, 0, dir.x);
-
-    const edgeA = bPos.clone().addScaledVector(perp, blockerRadius);
-    const edgeB = bPos.clone().addScaledVector(perp, -blockerRadius);
-
-    const rayA = edgeA.clone().sub(ballPos).normalize();
-    const rayB = edgeB.clone().sub(ballPos).normalize();
-
-    const farA = edgeA.clone().addScaledVector(rayA, depth);
-    const farB = edgeB.clone().addScaledVector(rayB, depth);
-
-    allPositions.push(
-      edgeA.x, 0.01, edgeA.z,
-      edgeB.x, 0.01, edgeB.z,
-      farB.x, 0.01, farB.z,
-      farA.x, 0.01, farA.z
-    );
-  });
-
-  if (allPositions.length === 0) {
+  const activeBlockers = players.filter(p => p.userData.isBlocker);
+  if (activeBlockers.length === 0) {
     blockShadow.geometry.dispose();
     blockShadow.geometry = new THREE.BufferGeometry();
     return;
   }
 
+  // Cluster adjacent blockers (distance < 0.9m) to form single unified wedges
+  const connections = activeBlockers.map(() => []);
+  for (let i = 0; i < activeBlockers.length; i++) {
+    for (let j = i + 1; j < activeBlockers.length; j++) {
+      if (activeBlockers[i].position.distanceTo(activeBlockers[j].position) < 0.9) {
+        connections[i].push(j);
+        connections[j].push(i);
+      }
+    }
+  }
+
+  const clusters = [];
+  const visited = new Set();
+  for (let i = 0; i < activeBlockers.length; i++) {
+    if (visited.has(i)) continue;
+    const cluster = [];
+    const stack = [i];
+    visited.add(i);
+    while (stack.length > 0) {
+      const curr = stack.pop();
+      cluster.push(activeBlockers[curr]);
+      connections[curr].forEach(neighbor => {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          stack.push(neighbor);
+        }
+      });
+    }
+    clusters.push(cluster);
+  }
+
+  const allPositions = [];
+
+  clusters.forEach((cluster) => {
+    let minAngle = Infinity;
+    let maxAngle = -Infinity;
+    let edgeL = null;
+    let edgeR = null;
+
+    cluster.forEach(player => {
+      const H = player.userData.height || 1.9;
+      const blockerRadius = H * 0.13;
+      const bPos = player.position.clone(); bPos.y = 0;
+      const toBlocker = bPos.clone().sub(ballPos);
+      if (toBlocker.lengthSq() < 0.001) return;
+      
+      const dir = toBlocker.normalize();
+      const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+      
+      const eA = bPos.clone().addScaledVector(perp, blockerRadius);
+      const eB = bPos.clone().addScaledVector(perp, -blockerRadius);
+
+      [eA, eB].forEach(e => {
+        const angle = Math.atan2(e.z - ballPos.z, e.x - ballPos.x);
+        if (angle < minAngle) { minAngle = angle; edgeL = e; }
+        if (angle > maxAngle) { maxAngle = angle; edgeR = e; }
+      });
+    });
+
+    if (!edgeL || !edgeR) return;
+
+    const rayL = edgeL.clone().sub(ballPos).normalize();
+    const rayR = edgeR.clone().sub(ballPos).normalize();
+
+    const farL = edgeL.clone().addScaledVector(rayL, depth);
+    const farR = edgeR.clone().addScaledVector(rayR, depth);
+
+    allPositions.push(
+      edgeL.x, 0.01, edgeL.z,
+      edgeR.x, 0.01, edgeR.z,
+      farR.x, 0.01, farR.z,
+      farL.x, 0.01, farL.z
+    );
+  });
+
   const positions = new Float32Array(allPositions);
   const indices = [];
-  const activeBlockers = players.filter(p => p.userData.isBlocker).length;
-  for (let i = 0; i < activeBlockers; i++) {
+  for (let i = 0; i < clusters.length; i++) {
     const base = i * 4;
     indices.push(base, base + 1, base + 2, base + 2, base + 3, base);
   }
