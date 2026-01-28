@@ -755,7 +755,8 @@ function refreshDropdowns() {
 function saveLineup(key = "volleyballer_lineup", silent = false) {
   const data = players.map(p => ({
     label: p.userData.label,
-    height: p.userData.height
+    height: p.userData.height,
+    jump: p.userData.jump || 3.10
   }));
   
   if (key === "NAMED") {
@@ -794,6 +795,7 @@ function loadLineup(key = "volleyballer_lineup", silent = false) {
     if (players[i]) {
       updatePlayerLabel(players[i], d.label, true);
       updatePlayerHeight(players[i], d.height, true);
+      if (d.jump) updatePlayerJump(players[i], d.jump, true);
     }
   });
 
@@ -801,6 +803,8 @@ function loadLineup(key = "volleyballer_lineup", silent = false) {
     ui.playerLabel.value = selectedPlayer.userData.label;
     ui.pHeight.value = selectedPlayer.userData.height;
     ui.pHeightVal.textContent = selectedPlayer.userData.height.toFixed(2) + "m";
+    ui.pJump.value = selectedPlayer.userData.jump || 3.10;
+    ui.pJumpVal.textContent = (selectedPlayer.userData.jump || 3.10).toFixed(2) + "m";
   }
   updateBlockShadow();
   updatePlayerRotations();
@@ -818,18 +822,7 @@ function deleteLineup() {
 }
 
 function savePositions(key = "volleyballer_positions", silent = false) {
-  const data = {
-    players: players.map(p => ({
-      x: p.position.x,
-      z: p.position.z
-    })),
-    ball: { x: ball.position.x, z: ball.position.z },
-    target: { x: attackTarget.position.x, z: attackTarget.position.z },
-    physics: {
-      height: ui.contactHeight.value,
-      power: ui.attackPower.value
-    }
-  };
+  const data = JSON.parse(getFullStateJSON());
 
   if (key === "NAMED") {
     const name = ui.posName.value.trim();
@@ -896,6 +889,14 @@ const players = [
 ];
 
 function resetPlayerPositions() {
+  hideZoneNodes();
+  zones.forEach(z => {
+    z.geometry.dispose();
+    z.material.dispose();
+    scene.remove(z);
+  });
+  zones.length = 0;
+
   players[0].position.set(-3.0, players[0].userData.dragHeight, -6.0); // Pos 1
   players[1].position.set(-3.0, players[1].userData.dragHeight, -0.6); // Pos 2
   players[2].position.set(0.0, players[2].userData.dragHeight, -0.6);  // Pos 3
@@ -1500,7 +1501,11 @@ function getFullStateJSON() {
     physics: {
       height: ui.contactHeight.value,
       power: ui.attackPower.value
-    }
+    },
+    zones: zones.map(z => ({
+      color: '#' + z.material.color.getHexString(),
+      corners: z.userData.corners.map(c => ({ x: parseFloat(c.x.toFixed(2)), z: parseFloat(c.z.toFixed(2)) }))
+    }))
   };
   return JSON.stringify(data, null, 2);
 }
@@ -1765,6 +1770,15 @@ ui.rotateTeam.addEventListener("click", () => {
 });
 
 function applyTacticalState(data) {
+  // Always clear existing zones when applying new tactical state
+  hideZoneNodes();
+  zones.forEach(z => {
+    z.geometry.dispose();
+    z.material.dispose();
+    scene.remove(z);
+  });
+  zones.length = 0;
+
   if (data.players) {
     data.players.forEach((d, i) => {
       if (players[i]) {
@@ -1793,6 +1807,17 @@ function applyTacticalState(data) {
     ui.contactHeight.dispatchEvent(new Event('input'));
     ui.attackPower.dispatchEvent(new Event('input'));
   }
+
+  if (data.zones) {
+    data.zones.forEach(zd => {
+      const z = createZoneMesh({ color: zd.color });
+      const corners = zd.corners.map(c => new THREE.Vector3(c.x, 0, c.z));
+      updateZoneGeometry(z, ...corners);
+      scene.add(z);
+      zones.push(z);
+    });
+  }
+
   updateBlockShadow();
   updateNetShadow();
   updatePlayerRotations();
@@ -1804,7 +1829,8 @@ function generateShareUrl() {
   const state = {
     r: players.map(p => ({
       l: p.userData.label,
-      h: p.userData.height
+      h: p.userData.height,
+      j: p.userData.jump || 3.10
     })),
     t: {
       p: players.map(p => ({
@@ -1818,7 +1844,11 @@ function generateShareUrl() {
         pw: ui.attackPower.value,
         ms: ui.mergeShadows.checked,
         ns: ui.netShadowToggle.checked
-      }
+      },
+      z: zones.map(z => ({
+        c: '#' + z.material.color.getHexString(),
+        r: z.userData.corners.map(c => ({ x: parseFloat(c.x.toFixed(2)), z: parseFloat(c.z.toFixed(2)) }))
+      }))
     }
   };
 
@@ -1849,6 +1879,7 @@ function loadFromUrl() {
         if (players[i]) {
           updatePlayerLabel(players[i], d.l, true);
           updatePlayerHeight(players[i], d.h, true);
+          if (d.j) updatePlayerJump(players[i], d.j, true);
         }
       });
     }
@@ -1864,7 +1895,11 @@ function loadFromUrl() {
           power: state.t.ph.pw,
           mergeShadows: state.t.ph.ms,
           netShadow: state.t.ph.ns
-        }
+        },
+        zones: state.t.z ? state.t.z.map(zd => ({
+          color: zd.c,
+          corners: zd.r
+        })) : []
       };
       applyTacticalState(legacyData);
     }
