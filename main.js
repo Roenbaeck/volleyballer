@@ -13,7 +13,6 @@ const ui = {
   paintStatus: document.getElementById("paintStatus"),
   zoneType: document.getElementById("zoneType"),
   zoneColor: document.getElementById("zoneColor"),
-  netHeight: document.getElementById("netHeight"),
   clearZones: document.getElementById("clearZones"),
   resetPlayers: document.getElementById("resetPlayers"),
   playerUI: document.getElementById("playerUI"),
@@ -423,8 +422,8 @@ netBottomTape.position.z = 0;
 netBottomTape.castShadow = true;
 scene.add(netBottomTape);
 
-// Dynamic 3D character models
-function createPlayer({ color, height = 1.75, label, side = "home", isBlocker = false }) {
+// Dynamic 3D character models with realistic proportions
+function createPlayer({ color, height = 1.95, label, side = "home", isBlocker = false }) {
   const group = new THREE.Group();
   
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8d4c4, roughness: 0.8 });
@@ -433,69 +432,81 @@ function createPlayer({ color, height = 1.75, label, side = "home", isBlocker = 
   const shoeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.5 });
   const hairMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 0.9 });
 
-  const s = height / 1.75;
+  const H = height;
 
-  // Legs
-  const legGeo = new THREE.CapsuleGeometry(0.09 * s, 0.45 * s, 4, 8);
+  // Legs (50% of height)
+  const legH = H * 0.5;
+  const legRad = H * 0.05;
+  const legGeo = new THREE.CapsuleGeometry(legRad, legH - 2 * legRad, 4, 8);
+  
   const leftLeg = new THREE.Mesh(legGeo, pantsMat);
-  leftLeg.position.set(-0.16 * s, 0.32 * s, 0);
+  leftLeg.position.set(-H * 0.09, legH * 0.5, 0);
   leftLeg.castShadow = true;
   group.add(leftLeg);
 
   const rightLeg = new THREE.Mesh(legGeo, pantsMat);
-  rightLeg.position.set(0.16 * s, 0.32 * s, 0);
+  rightLeg.position.set(H * 0.09, legH * 0.5, 0);
   rightLeg.castShadow = true;
   group.add(rightLeg);
   
   // Shoes
-  const shoeGeo = new THREE.BoxGeometry(0.12 * s, 0.08 * s, 0.22 * s);
+  const shoeGeo = new THREE.BoxGeometry(H * 0.07, H * 0.046, H * 0.12);
   const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
-  leftShoe.position.set(-0.16 * s, 0.04 * s, 0.04 * s);
+  leftShoe.position.set(-H * 0.09, H * 0.023, H * 0.03);
   leftShoe.castShadow = true;
   group.add(leftShoe);
   
   const rightShoe = new THREE.Mesh(shoeGeo, shoeMat);
-  rightShoe.position.set(0.16 * s, 0.04 * s, 0.04 * s);
+  rightShoe.position.set(H * 0.09, H * 0.023, H * 0.03);
   rightShoe.castShadow = true;
   group.add(rightShoe);
 
-  // Torso
-  const torsoGeo = new THREE.CylinderGeometry(0.24 * s, 0.18 * s, 0.65 * s, 8);
+  // Torso (35% of height)
+  const torsoH = H * 0.38;
+  const torsoGeo = new THREE.CylinderGeometry(H * 0.13, H * 0.1, torsoH, 8);
   const torso = new THREE.Mesh(torsoGeo, jerseyMat);
-  torso.position.y = 0.85 * s;
+  torso.position.y = legH + torsoH * 0.5;
   torso.castShadow = true;
   group.add(torso);
 
-  // Head
+  // Head (center at ~93% height)
   const headGroup = new THREE.Group();
-  headGroup.position.y = 1.3 * s;
+  const headRad = H * 0.075;
+  headGroup.position.y = H - headRad;
   group.add(headGroup);
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13 * s, 16, 16), skinMat);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(headRad, 16, 16), skinMat);
   head.castShadow = true;
   headGroup.add(head);
 
-  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.135 * s, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(headRad * 1.05, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
   hair.rotation.x = -0.2;
   headGroup.add(hair);
 
-  // Arms
-  const armGeo = new THREE.CapsuleGeometry(0.07 * s, 0.45 * s, 4, 8);
+  // Arms (shoulder at ~85% height)
+  const armLen = H * 0.45;
+  const armRad = H * 0.04;
+  const armGeo = new THREE.CapsuleGeometry(armRad, armLen - 2 * armRad, 4, 8);
   const leftArm = new THREE.Mesh(armGeo, skinMat);
   const rightArm = new THREE.Mesh(armGeo, skinMat);
   
+  const shoulderY = H * 0.82;
+  const shoulderWidth = H * 0.18;
+
   if (isBlocker) {
-    leftArm.position.set(-0.32 * s, 1.35 * s, 0);
-    leftArm.rotation.z = 0.1;
-    rightArm.position.set(0.32 * s, 1.35 * s, 0);
-    rightArm.rotation.z = -0.1;
+    // Arms UP - narrower and straighter for better block formation
+    leftArm.position.set(-shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
+    leftArm.rotation.z = 0.03;
+    rightArm.position.set(shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
+    rightArm.rotation.z = -0.03;
   } else {
-    leftArm.position.set(-0.32 * s, 0.9 * s, 0.15 * s);
-    leftArm.rotation.x = -1.1;
-    leftArm.rotation.z = 0.25;
-    rightArm.position.set(0.32 * s, 0.9 * s, 0.15 * s);
-    rightArm.rotation.x = -1.1;
-    rightArm.rotation.z = -0.25;
+    // Arms forward (crouch/defense)
+    leftArm.position.set(-shoulderWidth, shoulderY - armLen * 0.2, H * 0.1);
+    leftArm.rotation.x = -1.2;
+    leftArm.rotation.z = 0.2;
+    rightArm.position.set(shoulderWidth, shoulderY - armLen * 0.2, H * 0.1);
+    rightArm.rotation.x = -1.2;
+    rightArm.rotation.z = -0.2;
   }
   leftArm.castShadow = true;
   rightArm.castShadow = true;
@@ -522,11 +533,11 @@ function createPlayer({ color, height = 1.75, label, side = "home", isBlocker = 
   
   const labelTex = new THREE.CanvasTexture(labelCanvas);
   const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true }));
-  labelSprite.position.y = 1.7 * s;
+  labelSprite.position.y = H + 0.25;
   labelSprite.scale.set(0.8, 0.4, 1);
   group.add(labelSprite);
 
-  const jumpOffset = isBlocker ? 0.35 : 0;
+  const jumpOffset = isBlocker ? 0.4 : 0;
   group.userData = {
     label,
     side,
@@ -564,17 +575,17 @@ function updatePlayerLabel(player, text) {
 }
 
 const blockers = [
-  createPlayer({ color: 0x1565c0, label: "BL", side: "home", isBlocker: true }),
-  createPlayer({ color: 0x1565c0, label: "BR", side: "home", isBlocker: true })
+  createPlayer({ color: 0x1565c0, label: "BL", side: "home", isBlocker: true, height: 2.05 }),
+  createPlayer({ color: 0x1565c0, label: "BR", side: "home", isBlocker: true, height: 2.05 })
 ];
 blockers[0].position.set(-1.2, blockers[0].userData.dragHeight, -0.6);
 blockers[1].position.set(1.2, blockers[1].userData.dragHeight, -0.6);
 
 const defenders = [
-  createPlayer({ color: 0x2e7d32, label: "D1", side: "home" }),
-  createPlayer({ color: 0x2e7d32, label: "D2", side: "home" }),
-  createPlayer({ color: 0x2e7d32, label: "D3", side: "home" }),
-  createPlayer({ color: 0x2e7d32, label: "D4", side: "home" })
+  createPlayer({ color: 0x2e7d32, label: "L", side: "home", height: 1.78 }),
+  createPlayer({ color: 0x2e7d32, label: "D2", side: "home", height: 1.95 }),
+  createPlayer({ color: 0x2e7d32, label: "D3", side: "home", height: 1.95 }),
+  createPlayer({ color: 0x2e7d32, label: "S", side: "home", height: 1.88 })
 ];
 defenders[0].position.set(-2.5, defenders[0].userData.dragHeight, -5.5);
 defenders[1].position.set(0, defenders[1].userData.dragHeight, -6.4);
@@ -994,22 +1005,6 @@ ui.playerLabel.addEventListener("input", (event) => {
     updatePlayerLabel(selectedPlayer, event.target.value.toUpperCase());
   }
 });
-
-ui.netHeight.addEventListener("change", (event) => {
-  const height = Number(event.target.value) || 2.43;
-  net.geometry.dispose();
-  net.geometry = new THREE.PlaneGeometry(COURT.width, 1.0);
-  net.position.y = height - 0.5;
-  netTape.position.y = height + 0.015;
-  netBottomTape.position.y = height - 1.0 + 0.025;
-});
-
-const initialNetHeight = Number(ui.netHeight?.value) || 2.43;
-net.geometry.dispose();
-net.geometry = new THREE.PlaneGeometry(COURT.width, 1.0);
-net.position.y = initialNetHeight - 0.5;
-netTape.position.y = initialNetHeight + 0.015;
-netBottomTape.position.y = initialNetHeight - 1.0 + 0.025;
 
 setPaintMode(false);
 updatePlayerRotations();
