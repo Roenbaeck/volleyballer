@@ -9,9 +9,7 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/
 
 const app = document.getElementById("app");
 const ui = {
-  paintToggle: document.getElementById("paintToggle"),
-  paintStatus: document.getElementById("paintStatus"),
-  zoneType: document.getElementById("zoneType"),
+  modeSwitch: document.getElementById("modeSwitch"),
   zoneColor: document.getElementById("zoneColor"),
   clearZones: document.getElementById("clearZones"),
   resetPlayers: document.getElementById("resetPlayers"),
@@ -752,7 +750,6 @@ const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
 function setPaintMode(active) {
   paintMode = active;
-  ui.paintStatus.textContent = active ? "Paint zones" : "Drag players";
   controls.enabled = !active;
 }
 
@@ -766,11 +763,11 @@ function worldPointFromEvent(event) {
   return point;
 }
 
-function createZoneMesh({ color, type }) {
+function createZoneMesh({ color }) {
   const material = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: type === "undefended" ? 0.92 : 0.82,
+    opacity: 0.82,
     side: THREE.DoubleSide,
     depthWrite: false
   });
@@ -1029,8 +1026,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   painting = true;
   zoneStart = worldPointFromEvent(event);
   currentZone = createZoneMesh({
-    color: ui.zoneColor.value,
-    type: ui.zoneType.value
+    color: ui.zoneColor.value
   });
   scene.add(currentZone);
   zones.push(currentZone);
@@ -1063,8 +1059,18 @@ renderer.domElement.addEventListener("pointerup", () => {
   controls.enabled = !paintMode;
 });
 
-ui.paintToggle.addEventListener("change", (event) => {
-  setPaintMode(event.target.checked);
+ui.modeSwitch.addEventListener("click", (event) => {
+  const option = event.target.closest(".switch-option");
+  if (!option) return;
+  
+  const mode = option.dataset.mode;
+  setPaintMode(mode === "paint");
+  
+  // UI Visuals
+  ui.modeSwitch.classList.toggle("dragging", mode === "paint");
+  ui.modeSwitch.querySelectorAll(".switch-option").forEach(opt => {
+    opt.classList.toggle("active", opt === option);
+  });
 });
 
 ui.clearZones.addEventListener("click", () => {

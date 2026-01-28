@@ -84,6 +84,45 @@
       border: 1px solid rgba(79, 195, 247, 0.4);
       color: var(--accent);
     }
+    
+    /* Toggle Switch */
+    .switch-container {
+      display: flex;
+      background: #161b22;
+      border-radius: 12px;
+      padding: 4px;
+      margin-bottom: 15px;
+      border: 1px solid var(--panel-border);
+      position: relative;
+    }
+    .switch-option {
+      flex: 1;
+      text-align: center;
+      padding: 8px 0;
+      font-size: 12px;
+      cursor: pointer;
+      z-index: 1;
+      transition: color 0.3s;
+      color: rgba(230, 238, 247, 0.5);
+    }
+    .switch-option.active {
+      color: #ffffff;
+    }
+    .switch-slider {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      width: calc(50% - 4px);
+      height: calc(100% - 8px);
+      background: rgba(79, 195, 247, 0.25);
+      border: 1px solid rgba(79, 195, 247, 0.5);
+      border-radius: 8px;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .switch-container.dragging .switch-slider {
+      transform: translateX(100%);
+    }
+
     #legend {
       display: grid;
       grid-template-columns: auto 1fr;
@@ -122,19 +161,14 @@
   </script>
   <div id="ui">
     <h1>Volleyball Tactics Board</h1>
-    <p>Drag players and the attacking ball. Toggle paint mode to color zones.</p>
-    <div class="control">
-      <label for="paintToggle">Paint zones</label>
-      <input id="paintToggle" type="checkbox" />
-      <span class="pill" id="paintStatus">Drag players</span>
+    <p>Select a mode to interact with the board.</p>
+    
+    <div class="switch-container" id="modeSwitch">
+      <div class="switch-slider"></div>
+      <div class="switch-option active" data-mode="drag">Drag Players</div>
+      <div class="switch-option" data-mode="paint">Paint Zones</div>
     </div>
-    <div class="control">
-      <label for="zoneType">Zone type</label>
-      <select id="zoneType">
-        <option value="responsibility">Responsibility</option>
-        <option value="undefended">Undefended</option>
-      </select>
-    </div>
+
     <div class="control">
       <label for="zoneColor">Zone color</label>
       <input id="zoneColor" type="color" value="#4fc3f7" />
