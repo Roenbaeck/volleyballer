@@ -400,8 +400,8 @@ function createNetPost(x) {
   post.castShadow = true;
   return post;
 }
-scene.add(createNetPost(-halfW - 0.15));
-scene.add(createNetPost(halfW + 0.15));
+scene.add(createNetPost(-halfW - 0.65));
+scene.add(createNetPost(halfW + 0.65));
 
 // Net texture (finer grid)
 const netTexture = (() => {
@@ -446,7 +446,7 @@ const netMaterial = new THREE.MeshStandardMaterial({
   roughness: 0.8,
   metalness: 0.0
 });
-const net = new THREE.Mesh(new THREE.PlaneGeometry(COURT.width, 1.0), netMaterial);
+const net = new THREE.Mesh(new THREE.PlaneGeometry(COURT.width + 1.0, 1.0), netMaterial);
 net.position.y = 2.43 - 0.5;
 net.position.z = 0;
 net.castShadow = true;
@@ -455,7 +455,7 @@ scene.add(net);
 
 // Net tape (top)
 const netTape = new THREE.Mesh(
-  new THREE.BoxGeometry(COURT.width, 0.07, 0.03),
+  new THREE.BoxGeometry(COURT.width + 1.0, 0.07, 0.03),
   new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, metalness: 0.1 })
 );
 netTape.position.y = 2.43 + 0.015;
@@ -465,13 +465,24 @@ scene.add(netTape);
 
 // Net tape (bottom)
 const netBottomTape = new THREE.Mesh(
-  new THREE.BoxGeometry(COURT.width, 0.05, 0.03),
+  new THREE.BoxGeometry(COURT.width + 1.0, 0.05, 0.03),
   new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4, metalness: 0.1 })
 );
 netBottomTape.position.y = 2.43 - 1.0 + 0.025;
 netBottomTape.position.z = 0;
 netBottomTape.castShadow = true;
 scene.add(netBottomTape);
+
+// Antennas
+const antennaGeo = new THREE.CylinderGeometry(0.015, 0.015, 1.8, 8);
+const antennaMat = new THREE.MeshStandardMaterial({ color: 0xff4444, roughness: 0.5 }); // Red but we'll add white stripes later if needed
+const leftAntenna = new THREE.Mesh(antennaGeo, antennaMat);
+leftAntenna.position.set(-COURT.halfWidth, 2.43 - 1.0 + 0.9, 0); // Bottom of net is ~1.43, top is 2.43. Antenna is 1.8m tall.
+scene.add(leftAntenna);
+
+const rightAntenna = new THREE.Mesh(antennaGeo, antennaMat);
+rightAntenna.position.set(COURT.halfWidth, 2.43 - 1.0 + 0.9, 0);
+scene.add(rightAntenna);
 
 // Dynamic 3D character models with realistic proportions
 function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side = "home", isBlocker = false }) {
@@ -1157,11 +1168,11 @@ function hideZoneNodes() {
 }
 
 function clampToCourt(object) {
-  const margin = 0.4;
-  const minX = -COURT.halfWidth + margin;
-  const maxX = COURT.halfWidth - margin;
-  const minZ = -COURT.halfLength + margin;
-  const maxZ = COURT.halfLength - margin;
+  const margin = 1.5; // Increased margin to allow players slightly off-court
+  const minX = -COURT.halfWidth - margin;
+  const maxX = COURT.halfWidth + margin;
+  const minZ = -COURT.halfLength - margin;
+  const maxZ = COURT.halfLength + margin;
 
   object.position.x = THREE.MathUtils.clamp(object.position.x, minX, maxX);
   object.position.z = THREE.MathUtils.clamp(object.position.z, minZ, maxZ);
