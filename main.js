@@ -21,6 +21,7 @@ const ui = {
   heightValue: document.getElementById("heightValue"),
   attackPower: document.getElementById("attackPower"),
   powerValue: document.getElementById("powerValue"),
+  mergeShadows: document.getElementById("mergeShadows"),
 
   saveLineup: document.getElementById("saveLineup"),
   loadLineup: document.getElementById("loadLineup"),
@@ -1097,35 +1098,42 @@ function updateBlockShadow() {
     return;
   }
 
-  // Cluster adjacent blockers (distance < 0.9m) to form single unified wedges
-  const connections = activeBlockers.map(() => []);
-  for (let i = 0; i < activeBlockers.length; i++) {
-    for (let j = i + 1; j < activeBlockers.length; j++) {
-      if (activeBlockers[i].position.distanceTo(activeBlockers[j].position) < 0.9) {
-        connections[i].push(j);
-        connections[j].push(i);
+  const clusters = [];
+  const shouldMerge = ui.mergeShadows.checked;
+
+  if (!shouldMerge) {
+    // Each blocker is its own cluster
+    activeBlockers.forEach(p => clusters.push([p]));
+  } else {
+    // Cluster adjacent blockers (distance < 0.9m) to form single unified wedges
+    const connections = activeBlockers.map(() => []);
+    for (let i = 0; i < activeBlockers.length; i++) {
+      for (let j = i + 1; j < activeBlockers.length; j++) {
+        if (activeBlockers[i].position.distanceTo(activeBlockers[j].position) < 0.9) {
+          connections[i].push(j);
+          connections[j].push(i);
+        }
       }
     }
-  }
 
-  const clusters = [];
-  const visited = new Set();
-  for (let i = 0; i < activeBlockers.length; i++) {
-    if (visited.has(i)) continue;
-    const cluster = [];
-    const stack = [i];
-    visited.add(i);
-    while (stack.length > 0) {
-      const curr = stack.pop();
-      cluster.push(activeBlockers[curr]);
-      connections[curr].forEach(neighbor => {
-        if (!visited.has(neighbor)) {
-          visited.add(neighbor);
-          stack.push(neighbor);
-        }
-      });
+    const visited = new Set();
+    for (let i = 0; i < activeBlockers.length; i++) {
+      if (visited.has(i)) continue;
+      const cluster = [];
+      const stack = [i];
+      visited.add(i);
+      while (stack.length > 0) {
+        const curr = stack.pop();
+        cluster.push(activeBlockers[curr]);
+        connections[curr].forEach(neighbor => {
+          if (!visited.has(neighbor)) {
+            visited.add(neighbor);
+            stack.push(neighbor);
+          }
+        });
+      }
+      clusters.push(cluster);
     }
-    clusters.push(cluster);
   }
 
   const allPositions = [];
@@ -1412,6 +1420,11 @@ ui.attackPower.addEventListener("input", (e) => {
   ui.powerValue.textContent = label;
 
   updateAttackIndicator();
+  saveLastKnown();
+});
+
+ui.mergeShadows.addEventListener("change", () => {
+  updateBlockShadow();
   saveLastKnown();
 });
 
