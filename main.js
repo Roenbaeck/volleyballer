@@ -33,7 +33,8 @@ const ui = {
   loadPos: document.getElementById("loadPos"),
   deletePos: document.getElementById("deletePos"),
   posName: document.getElementById("posName"),
-  posList: document.getElementById("posList")
+  posList: document.getElementById("posList"),
+  shareLayout: document.getElementById("shareLayout")
 };
 
 const DEFAULT_TACTICS = {
@@ -1449,6 +1450,7 @@ ui.deleteLineup.addEventListener("click", deleteLineup);
 ui.savePos.addEventListener("click", () => savePositions("NAMED"));
 ui.loadPos.addEventListener("click", () => loadPositions("NAMED"));
 ui.deletePos.addEventListener("click", deletePosition);
+ui.shareLayout.addEventListener("click", generateShareUrl);
 
 refreshDropdowns();
 
@@ -1472,6 +1474,9 @@ function applyTacticalState(data) {
   if (data.physics) {
     ui.contactHeight.value = data.physics.height;
     ui.attackPower.value = data.physics.power;
+    if (data.physics.mergeShadows !== undefined) {
+      ui.mergeShadows.checked = data.physics.mergeShadows;
+    }
     ui.contactHeight.dispatchEvent(new Event('input'));
     ui.attackPower.dispatchEvent(new Event('input'));
   }
@@ -1481,22 +1486,103 @@ function applyTacticalState(data) {
   saveLastKnown();
 }
 
-setPaintMode(false);
+function generateShareUrl() {
+  const state = {
+    r: players.map(p => ({
+      l: p.userData.label,
+      h: p.userData.height
+    })),
+    t: {
+      p: players.map(p => ({
+        x: parseFloat(p.position.x.toFixed(2)),
+        z: parseFloat(p.position.z.toFixed(2))
+      })),
+      b: { x: parseFloat(ball.position.x.toFixed(2)), z: parseFloat(ball.position.z.toFixed(2)) },
+      tg: { x: parseFloat(attackTarget.position.x.toFixed(2)), z: parseFloat(attackTarget.position.z.toFixed(2)) },
+      ph: {
+        h: ui.contactHeight.value,
+        pw: ui.attackPower.value,
+        ms: ui.mergeShadows.checked
+      }
+    }
+  };
 
-// Auto-load last session state (auto-saved) if available
-if (localStorage.getItem("volleyballer_lastLineup")) {
-  loadLineup("volleyballer_lastLineup", true);
-} else if (localStorage.getItem("volleyballer_lineup")) {
-  loadLineup("volleyballer_lineup", true);
+  const json = JSON.stringify(state);
+  const base64 = btoa(unescape(encodeURIComponent(json)));
+  const url = new URL(window.location.href);
+  url.searchParams.set("s", base64);
+  
+  navigator.clipboard.writeText(url.toString()).then(() => {
+    alert("Shareable URL copied to clipboard!");
+  }).catch(() => {
+    prompt("Copy this URL to share:", url.toString());
+  });
 }
 
-// Important: Load lineup BEFORE loading positions
-if (localStorage.getItem("volleyballer_lastPositions")) {
-  loadPositions("volleyballer_lastPositions");
-} else if (localStorage.getItem("volleyballer_positions")) {
-  loadPositions("volleyballer_positions");
-} else {
-  resetPlayerPositions();
+function loadFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const shared = params.get("s");
+  if (!shared) return false;
+
+  try {
+    const json = decodeURIComponent(escape(atob(shared)));
+    const state = JSON.parse(json);
+
+    // Apply roster (r)
+    if (state.r) {
+      state.r.forEach((d, i) => {
+        if (players[i]) {
+          updatePlayerLabel(players[i], d.l, true);
+          updatePlayerHeight(players[i], d.h, true);
+        }
+      });
+    }
+
+    // Apply tactics (t)
+    if (state.t) {
+      const legacyData = {
+        players: state.t.p,
+        ball: state.t.b,
+        target: state.t.tg,
+        physics: {
+          height: state.t.ph.h,
+          power: state.t.ph.pw,
+          mergeShadows: state.t.ph.ms
+        }
+      };
+      applyTacticalState(legacyData);
+    }
+    
+    // Clear URL after loading to avoid re-loading on refresh
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return true;
+  } catch (e) {
+    console.warn("Failed to load shared state", e);
+    return false;
+  }
+}
+
+setPaintMode(false);
+
+// Startup Sequence: URL state > Auto-save > Reset
+const loadedFromUrl = loadFromUrl();
+
+if (!loadedFromUrl) {
+  // Auto-load last session state (auto-saved) if available
+  if (localStorage.getItem("volleyballer_lastLineup")) {
+    loadLineup("volleyballer_lastLineup", true);
+  } else if (localStorage.getItem("volleyballer_lineup")) {
+    loadLineup("volleyballer_lineup", true);
+  }
+
+  // Important: Load lineup BEFORE loading positions
+  if (localStorage.getItem("volleyballer_lastPositions")) {
+    loadPositions("volleyballer_lastPositions");
+  } else if (localStorage.getItem("volleyballer_positions")) {
+    loadPositions("volleyballer_positions");
+  } else {
+    resetPlayerPositions();
+  }
 }
 
 // Initial labels for attack physics
