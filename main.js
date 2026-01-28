@@ -731,7 +731,7 @@ function createZoneMesh({ color, type }) {
   const material = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: type === "undefended" ? 0.3 : 0.22,
+    opacity: type === "undefended" ? 0.9 : 0.75,
     side: THREE.DoubleSide
   });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.1), material);
