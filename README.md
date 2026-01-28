@@ -30,9 +30,10 @@ A high-performance, 3D interactive tactics board for volleyball coaches and play
 - **Rotate Camera**: Right-click/Shift + Drag.
 - **Zoom**: Scroll wheel / Trackpad pinch.
 - **Move Players/Ball**: Simply drag them across the court.
-- **Select Player**: Click a player to open the roster editor (change role or height).
-- **Save/Load**: Use the management panels to store lineups (player names/roles) and positions (tactical setups).
-- **Paint Mode**: Toggle the switch to "Paint Zones" and drag on the floor to visualize field coverage.
+- **Select Player**: Click a player to open the roster editor (change role, height, or block reach).
+- **Save/Load**: Use the management panels to store lineups and positional tactics.
+- **Paint Mode**: Toggle "Paint Zones" and drag on the floor to draw coverage. Click an existing zone to reveal draggable corner nodes for precision shaping.
+- **Rotate Team**: Use the "Rotate team" button to shift all players clockwise through standard positions.
 
 ## Technologies
 
