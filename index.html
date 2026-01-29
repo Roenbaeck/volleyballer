@@ -296,10 +296,19 @@
           <label for="mergeShadows">Merge shadows</label>
           <input type="checkbox" id="mergeShadows" checked />
         </div>
-        <div class="control" style="margin-top: 5px;"
-          title="Show the area unreachable by straight hits due to net height">
+        <div class="control" title="Show the area unreachable by straight hits due to net height">
           <label for="netShadowToggle">Net shadow</label>
           <input type="checkbox" id="netShadowToggle" />
+        </div>
+        <div class="control" title="Set the official net height (e.g., 2.43m for Men, 2.24m for Women)">
+          <label for="netHeight">Net Height</label>
+          <select id="netHeight" style="width: 80px;">
+            <option value="2.43">2.43m</option>
+            <option value="2.35">2.35m</option>
+            <option value="2.24">2.24m</option>
+            <option value="2.20">2.20m</option>
+            <option value="2.16">2.16m</option>
+          </select>
         </div>
       </div>
     </details>

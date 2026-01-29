@@ -38,7 +38,8 @@ const ui = {
   deletePos: document.getElementById("deletePos"),
   posName: document.getElementById("posName"),
   posList: document.getElementById("posList"),
-  shareLayout: document.getElementById("shareLayout")
+  shareLayout: document.getElementById("shareLayout"),
+  netHeight: document.getElementById("netHeight")
 };
 
 const DEFAULT_TACTICS = {
@@ -484,6 +485,20 @@ scene.add(leftAntenna);
 const rightAntenna = new THREE.Mesh(antennaGeo, antennaMat);
 rightAntenna.position.set(COURT.halfWidth, 2.43 - 1.0 + 0.9, 0);
 scene.add(rightAntenna);
+
+function updateNetHeightVisuals() {
+  const h = parseFloat(ui.netHeight.value);
+  net.position.y = h - 0.5;
+  netTape.position.y = h + 0.015;
+  netBottomTape.position.y = h - 1.0 + 0.025;
+  leftAntenna.position.y = h - 1.0 + 0.9;
+  rightAntenna.position.y = h - 1.0 + 0.9;
+
+  updateNetShadow();
+  updateBlockShadow();
+}
+
+ui.netHeight.addEventListener("change", updateNetHeightVisuals);
 
 // Dynamic 3D character models with realistic proportions
 function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side = "home", isBlocker = false }) {
@@ -1321,8 +1336,9 @@ function updateBlockShadow() {
     if (!edgeL || !edgeR) return;
 
     const H_ball = ball.position.y;
-    const H_blockL = playerL.userData.jump || 2.43;
-    const H_blockR = playerR.userData.jump || 2.43;
+    const H_net_current = parseFloat(ui.netHeight.value);
+    const H_blockL = playerL.userData.jump || H_net_current;
+    const H_blockR = playerR.userData.jump || H_net_current;
 
     let depth_L = depth;
     let depth_R = depth;
@@ -1349,7 +1365,8 @@ function updateBlockShadow() {
     });
 
     const playerWedges = sorted.map(p => {
-      const h = p.userData.jump || 2.43;
+      const H_net_current = parseFloat(ui.netHeight.value);
+      const h = p.userData.jump || H_net_current;
       const blockerRadius = (p.userData.height || 1.9) * 0.13;
       const bPos = p.position.clone(); bPos.y = 0;
       const toBlocker = bPos.clone().sub(ballPos);
@@ -1411,7 +1428,7 @@ function updateNetShadow() {
   }
 
   const b = ball.position.clone();
-  const H_net = 2.43;
+  const H_net = parseFloat(ui.netHeight.value);
 
   // Only show shadow if ball is in the attacking half (z > 0)
   if (b.z < 0) {
