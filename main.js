@@ -44,12 +44,12 @@ const ui = {
 const DEFAULT_TACTICS = {
   "Diagonal Block": {
     players: [
-      {x: -2.65, z: -3.18},
-      {x: -2.91, z: -0.3},
-      {x: -2.15, z: -0.3},
-      {x: 1.35, z: -1.58},
-      {x: 2.25, z: -6.9},
-      {x: -3.44, z: -5.91}
+      { x: -2.65, z: -3.18 },
+      { x: -2.91, z: -0.3 },
+      { x: -2.15, z: -0.3 },
+      { x: 1.35, z: -1.58 },
+      { x: 2.25, z: -6.9 },
+      { x: -3.44, z: -5.91 }
     ],
     ball: { x: -3.17, z: 0.69 },
     target: { x: -3.87, z: -7.71 },
@@ -57,12 +57,12 @@ const DEFAULT_TACTICS = {
   },
   "Parallel Block": {
     players: [
-      {x: -3.4, z: -3.27},
-      {x: -3.71, z: -0.3},
-      {x: -2.89, z: -0.3},
-      {x: 1.64, z: -1.75},
-      {x: 2.73, z: -6.78},
-      {x: -0.61, z: -7.73}
+      { x: -3.4, z: -3.27 },
+      { x: -3.71, z: -0.3 },
+      { x: -2.89, z: -0.3 },
+      { x: 1.64, z: -1.75 },
+      { x: 2.73, z: -6.78 },
+      { x: -0.61, z: -7.73 }
     ],
     ball: { x: -3.22, z: 0.61 },
     target: { x: 3.59, z: -7.63 },
@@ -117,8 +117,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
 // Post-processing
-const composer = new EffectComposer(renderer);
+const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { stencilBuffer: true }));
 const renderPass = new RenderPass(scene, camera);
+renderPass.clearStencil = true;
 composer.addPass(renderPass);
 
 const bloomPass = new UnrealBloomPass(
@@ -257,7 +258,7 @@ const courtTexture = (() => {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
-  
+
   // Base wood color
   const baseGrad = ctx.createLinearGradient(0, 0, size, size);
   baseGrad.addColorStop(0, "#c4956a");
@@ -267,7 +268,7 @@ const courtTexture = (() => {
   baseGrad.addColorStop(1, "#c4956a");
   ctx.fillStyle = baseGrad;
   ctx.fillRect(0, 0, size, size);
-  
+
   // Wood grain
   ctx.globalAlpha = 0.15;
   for (let i = 0; i < size; i += 3) {
@@ -276,12 +277,12 @@ const courtTexture = (() => {
     ctx.lineWidth = 1 + Math.random();
     ctx.beginPath();
     ctx.moveTo(0, i + variation);
-    ctx.bezierCurveTo(size * 0.25, i + variation + Math.random() * 5, 
-                       size * 0.75, i + variation - Math.random() * 5, 
-                       size, i + variation);
+    ctx.bezierCurveTo(size * 0.25, i + variation + Math.random() * 5,
+      size * 0.75, i + variation - Math.random() * 5,
+      size, i + variation);
     ctx.stroke();
   }
-  
+
   // Plank lines
   ctx.globalAlpha = 0.2;
   ctx.strokeStyle = "#5a4030";
@@ -293,14 +294,14 @@ const courtTexture = (() => {
     ctx.lineTo(x, size);
     ctx.stroke();
   }
-  
+
   // Subtle noise
   ctx.globalAlpha = 0.05;
   for (let i = 0; i < 5000; i++) {
     ctx.fillStyle = Math.random() > 0.5 ? "#ffffff" : "#000000";
     ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2);
   }
-  
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
@@ -319,7 +320,7 @@ const courtNormalMap = (() => {
   const ctx = canvas.getContext("2d");
   ctx.fillStyle = "#8080ff";
   ctx.fillRect(0, 0, size, size);
-  
+
   // Subtle wood grain normals
   ctx.globalAlpha = 0.1;
   for (let i = 0; i < size; i += 2) {
@@ -330,7 +331,7 @@ const courtNormalMap = (() => {
     ctx.lineTo(size, i);
     ctx.stroke();
   }
-  
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
@@ -362,7 +363,7 @@ function createLine(x1, z1, x2, z2) {
   const dz = z2 - z1;
   const length = Math.sqrt(dx * dx + dz * dz);
   const angle = Math.atan2(dx, dz);
-  
+
   const geo = new THREE.PlaneGeometry(lineWidth, length);
   const mesh = new THREE.Mesh(geo, linesMaterial);
   mesh.rotation.x = -Math.PI / 2;
@@ -390,10 +391,10 @@ courtGroup.add(createLine(-halfW, 0, halfW, 0));
 // Net posts
 function createNetPost(x) {
   const postGeo = new THREE.CylinderGeometry(0.04, 0.04, 2.8, 16);
-  const postMat = new THREE.MeshStandardMaterial({ 
-    color: 0x444444, 
-    roughness: 0.3, 
-    metalness: 0.8 
+  const postMat = new THREE.MeshStandardMaterial({
+    color: 0x444444,
+    roughness: 0.3,
+    metalness: 0.8
   });
   const post = new THREE.Mesh(postGeo, postMat);
   post.position.set(x, 1.4, 0);
@@ -411,7 +412,7 @@ const netTexture = (() => {
   canvas.height = size;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, size, size);
-  
+
   // Net grid
   ctx.strokeStyle = "rgba(40,40,40,0.9)";
   ctx.lineWidth = 2;
@@ -428,7 +429,7 @@ const netTexture = (() => {
     ctx.lineTo(size, y);
     ctx.stroke();
   }
-  
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
@@ -487,7 +488,7 @@ scene.add(rightAntenna);
 // Dynamic 3D character models with realistic proportions
 function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side = "home", isBlocker = false }) {
   const group = new THREE.Group();
-  
+
   const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8d4c4, roughness: 0.8 });
   const jerseyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.4, metalness: 0.1 });
   const pantsMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
@@ -501,7 +502,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   const legH = H * 0.5;
   const legRad = H * 0.05;
   const legGeo = new THREE.CapsuleGeometry(legRad, legH - 2 * legRad, 4, 8);
-  
+
   const leftLeg = new THREE.Mesh(legGeo, pantsMat);
   leftLeg.position.set(-H * 0.09, legH * 0.5, 0);
   leftLeg.castShadow = true;
@@ -511,14 +512,14 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   rightLeg.position.set(H * 0.09, legH * 0.5, 0);
   rightLeg.castShadow = true;
   group.add(rightLeg);
-  
+
   // Shoes
   const shoeGeo = new THREE.BoxGeometry(H * 0.07, H * 0.046, H * 0.12);
   const leftShoe = new THREE.Mesh(shoeGeo, shoeMat);
   leftShoe.position.set(-H * 0.09, H * 0.023, H * 0.03);
   leftShoe.castShadow = true;
   group.add(leftShoe);
-  
+
   const rightShoe = new THREE.Mesh(shoeGeo, shoeMat);
   rightShoe.position.set(H * 0.09, H * 0.023, H * 0.03);
   rightShoe.castShadow = true;
@@ -555,7 +556,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   leftArm.name = "leftArm";
   const rightArm = new THREE.Mesh(armGeo, skinMat);
   rightArm.name = "rightArm";
-  
+
   leftArm.castShadow = true;
   rightArm.castShadow = true;
   group.add(leftArm, rightArm);
@@ -574,7 +575,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   lctx.textAlign = "center";
   lctx.textBaseline = "middle";
   lctx.fillText(label, 60, 30);
-  
+
   const labelTex = new THREE.CanvasTexture(labelCanvas);
   const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true }));
   labelSprite.name = "labelSprite";
@@ -586,7 +587,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   group.userData.kind = "player";
   group.userData.height = height;
   group.userData.jump = jump;
-  
+
   setPlayerStance(group, isBlocker);
   return group;
 }
@@ -598,17 +599,17 @@ function setPlayerStance(player, isBlocker) {
   const armLen = H * 0.45;
   const shoulderY = H * 0.82;
   const shoulderWidth = H * 0.18;
-  
+
   const leftArm = player.getObjectByName("leftArm");
   const rightArm = player.getObjectByName("rightArm");
   const torso = player.getObjectByName("torso");
   const labelSprite = player.getObjectByName("labelSprite");
-  
+
   if (torso) {
-    torso.material = new THREE.MeshStandardMaterial({ 
-      color: isBlocker ? 0x1565c0 : 0x2e7d32, 
-      roughness: 0.4, 
-      metalness: 0.1 
+    torso.material = new THREE.MeshStandardMaterial({
+      color: isBlocker ? 0x1565c0 : 0x2e7d32,
+      roughness: 0.4,
+      metalness: 0.1
     });
   }
 
@@ -618,7 +619,7 @@ function setPlayerStance(player, isBlocker) {
       leftArm.rotation.set(0, 0, 0.03);
       rightArm.position.set(shoulderWidth * 0.7, shoulderY + armLen * 0.45, 0);
       rightArm.rotation.set(0, 0, -0.03);
-      
+
       // Dynamic jump height based on Block Reach
       const standingReach = shoulderY + armLen;
       player.userData.dragHeight = Math.max(0.1, J - standingReach);
@@ -630,7 +631,7 @@ function setPlayerStance(player, isBlocker) {
       player.userData.dragHeight = 0;
     }
   }
-  
+
   if (labelSprite) {
     labelSprite.position.y = H + 0.25;
   }
@@ -645,7 +646,7 @@ function updatePlayerLabel(player, text, silent = false) {
   const canvas = labelSprite.material.map.image;
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  
+
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(0, 0, 120, 60, 12); else ctx.rect(0, 0, 120, 60);
@@ -655,7 +656,7 @@ function updatePlayerLabel(player, text, silent = false) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(text, 60, 30);
-  
+
   labelSprite.material.map.needsUpdate = true;
   if (!silent) saveLastKnown();
 }
@@ -670,32 +671,32 @@ function updatePlayerHeight(player, newHeight, silent = false) {
   // Remove old
   scene.remove(player);
   const idx = players.indexOf(player);
-  
+
   // Create new
-  const newPlayer = createPlayer({ 
-    label: oldLabel, 
-    height: newHeight, 
+  const newPlayer = createPlayer({
+    label: oldLabel,
+    height: newHeight,
     jump: oldJump,
     isBlocker: oldIsBlocker,
     side: oldSide
   });
   newPlayer.position.copy(oldPos);
-  
+
   // Update arrays
   if (idx !== -1) {
     players[idx] = newPlayer;
     // Update draggable array as well
     const dragIdx = draggable.indexOf(player);
     if (dragIdx !== -1) draggable[dragIdx] = newPlayer;
-    
+
     // Update allPlayers as well
     const allIdx = allPlayers.indexOf(player);
     if (allIdx !== -1) allPlayers[allIdx] = newPlayer;
   }
-  
+
   scene.add(newPlayer);
   if (selectedPlayer === player) selectedPlayer = newPlayer;
-  
+
   updateBlockShadow();
   updatePlayerRotations();
   if (!silent) saveLastKnown();
@@ -711,32 +712,32 @@ function updatePlayerJump(player, newJump, silent = false) {
   // Remove old
   scene.remove(player);
   const idx = players.indexOf(player);
-  
+
   // Create new
-  const newPlayer = createPlayer({ 
-    label: oldLabel, 
-    height: oldHeight, 
+  const newPlayer = createPlayer({
+    label: oldLabel,
+    height: oldHeight,
     jump: newJump,
     isBlocker: oldIsBlocker,
     side: oldSide
   });
   newPlayer.position.copy(oldPos);
-  
+
   // Update arrays
   if (idx !== -1) {
     players[idx] = newPlayer;
     // Update draggable array as well
     const dragIdx = draggable.indexOf(player);
     if (dragIdx !== -1) draggable[dragIdx] = newPlayer;
-    
+
     // Update allPlayers as well
     const allIdx = allPlayers.indexOf(player);
     if (allIdx !== -1) allPlayers[allIdx] = newPlayer;
   }
-  
+
   scene.add(newPlayer);
   if (selectedPlayer === player) selectedPlayer = newPlayer;
-  
+
   updateBlockShadow();
   updatePlayerRotations();
   if (!silent) saveLastKnown();
@@ -769,7 +770,7 @@ function saveLineup(key = "volleyballer_lineup", silent = false) {
     height: p.userData.height,
     jump: p.userData.jump || 3.10
   }));
-  
+
   if (key === "NAMED") {
     const name = ui.lineupName.value.trim();
     if (!name) return alert("Please enter a name for the lineup.");
@@ -855,7 +856,7 @@ function loadPositions(key = "volleyballer_positions") {
   if (key === "NAMED") {
     const name = ui.posList.value;
     if (!name) return alert("Please select a position from the list.");
-    
+
     // Check defaults first, then localStorage
     if (DEFAULT_TACTICS[name]) {
       data = DEFAULT_TACTICS[name];
@@ -914,19 +915,19 @@ function resetPlayerPositions() {
   players[3].position.set(3.0, players[3].userData.dragHeight, -0.6);  // Pos 4
   players[4].position.set(3.0, players[4].userData.dragHeight, -6.0);  // Pos 5
   players[5].position.set(0.0, players[5].userData.dragHeight, -7.0);  // Pos 6
-  
+
   players.forEach(p => {
     const isAtNet = p.position.z > -1.5;
     setPlayerStance(p, isAtNet);
   });
 
   ball.position.set(0, 3, 4);
-  
+
   if (selectedPlayer) {
     selectionRing.position.x = selectedPlayer.position.x;
     selectionRing.position.z = selectedPlayer.position.z;
   }
-  
+
   updatePlayerRotations();
   updateAttackIndicator();
   updateBlockShadow();
@@ -940,30 +941,30 @@ const ballTexture = (() => {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
-  
+
   // Base white
   ctx.fillStyle = "#fff8f0";
   ctx.fillRect(0, 0, size, size);
-  
+
   // Panel lines
   ctx.strokeStyle = "#1565c0";
   ctx.lineWidth = 8;
-  
+
   // Curved panel lines
   ctx.beginPath();
   ctx.arc(size / 2, size / 2, size * 0.35, 0, Math.PI * 2);
   ctx.stroke();
-  
+
   ctx.beginPath();
   ctx.moveTo(0, size / 2);
   ctx.quadraticCurveTo(size / 2, size * 0.3, size, size / 2);
   ctx.stroke();
-  
+
   ctx.beginPath();
   ctx.moveTo(size / 2, 0);
   ctx.quadraticCurveTo(size * 0.3, size / 2, size / 2, size);
   ctx.stroke();
-  
+
   // Yellow/gold accents
   ctx.fillStyle = "#ffc107";
   ctx.globalAlpha = 0.6;
@@ -973,7 +974,7 @@ const ballTexture = (() => {
   ctx.beginPath();
   ctx.ellipse(size * 0.75, size * 0.75, 30, 50, Math.PI / 4, 0, Math.PI * 2);
   ctx.fill();
-  
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -981,9 +982,9 @@ const ballTexture = (() => {
 
 const ball = new THREE.Mesh(
   new THREE.SphereGeometry(0.21, 32, 32),
-  new THREE.MeshStandardMaterial({ 
+  new THREE.MeshStandardMaterial({
     map: ballTexture,
-    roughness: 0.6, 
+    roughness: 0.6,
     metalness: 0.0,
     envMapIntensity: 0.4
   })
@@ -996,12 +997,16 @@ const allPlayers = [...players, ball];
 scene.add(...players, ball);
 
 // Block shadow (wedge from blocker occlusion)
-const shadowMat = new THREE.MeshBasicMaterial({ 
-  color: 0x000000, 
-  transparent: true, 
-  opacity: 0.45, 
+const shadowMat = new THREE.MeshBasicMaterial({
+  color: 0x000000,
+  transparent: true,
+  opacity: 0.45,
   side: THREE.DoubleSide,
-  depthWrite: false
+  depthWrite: false,
+  stencilWrite: true,
+  stencilFunc: THREE.EqualStencilFunc,
+  stencilRef: 0,
+  stencilZPass: THREE.IncrementStencilOp
 });
 const blockShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shadowMat);
 blockShadow.rotation.set(0, 0, 0);
@@ -1010,12 +1015,16 @@ blockShadow.renderOrder = -1;
 scene.add(blockShadow);
 
 // Net shadow (dead zone where hard hits can't reach)
-const netShadowMat = new THREE.MeshBasicMaterial({ 
-  color: 0x000000, 
-  transparent: true, 
-  opacity: 0.45, 
+const netShadowMat = new THREE.MeshBasicMaterial({
+  color: 0x000000,
+  transparent: true,
+  opacity: 0.45,
   side: THREE.DoubleSide,
-  depthWrite: false
+  depthWrite: false,
+  stencilWrite: true,
+  stencilFunc: THREE.EqualStencilFunc,
+  stencilRef: 0,
+  stencilZPass: THREE.IncrementStencilOp
 });
 const netShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), netShadowMat);
 netShadow.renderOrder = -1;
@@ -1028,11 +1037,11 @@ scene.add(attackLine);
 
 const attackTarget = new THREE.Mesh(
   new THREE.RingGeometry(0.2, 0.45, 48),
-  new THREE.MeshBasicMaterial({ 
-    color: 0x8b00ff, 
-    transparent: false, 
-    opacity: 1.0, 
-    side: THREE.DoubleSide 
+  new THREE.MeshBasicMaterial({
+    color: 0x8b00ff,
+    transparent: false,
+    opacity: 1.0,
+    side: THREE.DoubleSide
   })
 );
 attackTarget.rotation.x = -Math.PI / 2;
@@ -1043,11 +1052,11 @@ scene.add(attackTarget);
 // Inner ring
 const attackTargetInner = new THREE.Mesh(
   new THREE.RingGeometry(0.05, 0.12, 32),
-  new THREE.MeshBasicMaterial({ 
-    color: 0xffffff, 
-    transparent: true, 
-    opacity: 0.9, 
-    side: THREE.DoubleSide 
+  new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide
   })
 );
 attackTargetInner.rotation.x = -Math.PI / 2;
@@ -1098,16 +1107,16 @@ function createZoneMesh({ color }) {
     side: THREE.DoubleSide,
     depthWrite: false
   });
-  
+
   const geometry = new THREE.BufferGeometry();
   // 4 vertices for a quad
   const vertices = new Float32Array(12); // 4 points * 3 components
   geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-  
+
   // 2 triangles (counter-clockwise)
   const indices = [0, 1, 2, 0, 2, 3];
   geometry.setIndex(indices);
-  
+
   const mesh = new THREE.Mesh(geometry, material);
   mesh.userData.kind = "zone";
   mesh.userData.corners = [
@@ -1125,7 +1134,7 @@ function updateZoneGeometry(zone, p1, p2, p3, p4) {
   // Actually, easier to keep mesh at y=0.012 and use local coords.
   const corners = [p1, p2, p3, p4];
   zone.userData.corners = corners.map(p => p.clone());
-  
+
   for (let i = 0; i < 4; i++) {
     pos.setXYZ(i, corners[i].x, 0, corners[i].z);
   }
@@ -1153,7 +1162,7 @@ function selectZone(zone) {
   hideZoneNodes();
   selectedZone = zone;
   if (!zone) return;
-  
+
   for (let i = 0; i < 4; i++) {
     const node = createZoneNode(zone, i);
     scene.add(node);
@@ -1190,24 +1199,24 @@ function clampToCourt(object) {
 function updateAttackIndicator() {
   const start = ball.position.clone();
   const end = attackTarget.position.clone();
-  
+
   const dist = start.distanceTo(end);
   const midX = (start.x + end.x) / 2;
   const midZ = (start.z + end.z) / 2;
-  
+
   // Power scales arc height (Higher power = flatter arc, Lower power = loopy dink)
   const powerFactor = parseInt(ui.attackPower.value) / 100;
   const arcBoost = (1.0 - powerFactor) * dist * 0.4; // Low power adds significant height
-  
+
   const crossesNet = (start.z * end.z) <= 0;
   const basePeak = Math.max(start.y, end.y);
-  const minNetClearance = 2.55; 
+  const minNetClearance = 2.55;
   const arcHeight = (crossesNet ? Math.max(basePeak, minNetClearance) : basePeak) + arcBoost;
-  
+
   // Control point for quadratic curve
   const control = new THREE.Vector3(midX, arcHeight + 0.2, midZ);
   const curve = new THREE.QuadraticBezierCurve3(start, control, end);
-  
+
   // Re-generate tube geometry for thickness
   attackLine.geometry.dispose();
   attackLine.geometry = new THREE.TubeGeometry(curve, 32, 0.04, 8, false);
@@ -1220,7 +1229,7 @@ function updatePlayerRotations() {
     // Determine target point: projected ball position at player's height
     // This ensures they rotate only on the Y-axis
     const target = new THREE.Vector3(ballPos.x, player.position.y, ballPos.z);
-    
+
     // Smoothly or instantly face the ball
     if (player.position.distanceTo(target) > 0.1) {
       player.lookAt(target);
@@ -1279,12 +1288,15 @@ function updateBlockShadow() {
   }
 
   const allPositions = [];
+  const indices = [];
 
   clusters.forEach((cluster) => {
     let minAngle = Infinity;
     let maxAngle = -Infinity;
     let edgeL = null;
     let edgeR = null;
+    let playerL = null;
+    let playerR = null;
 
     cluster.forEach(player => {
       const H = player.userData.height || 1.9;
@@ -1292,43 +1304,97 @@ function updateBlockShadow() {
       const bPos = player.position.clone(); bPos.y = 0;
       const toBlocker = bPos.clone().sub(ballPos);
       if (toBlocker.lengthSq() < 0.001) return;
-      
+
       const dir = toBlocker.normalize();
       const perp = new THREE.Vector3(-dir.z, 0, dir.x);
-      
+
       const eA = bPos.clone().addScaledVector(perp, blockerRadius);
       const eB = bPos.clone().addScaledVector(perp, -blockerRadius);
 
-      [eA, eB].forEach(e => {
-        const angle = Math.atan2(e.z - ballPos.z, e.x - ballPos.x);
-        if (angle < minAngle) { minAngle = angle; edgeL = e; }
-        if (angle > maxAngle) { maxAngle = angle; edgeR = e; }
+      [{ edge: eA, player }, { edge: eB, player }].forEach(({ edge, player: p }) => {
+        const angle = Math.atan2(edge.z - ballPos.z, edge.x - ballPos.x);
+        if (angle < minAngle) { minAngle = angle; edgeL = edge; playerL = p; }
+        if (angle > maxAngle) { maxAngle = angle; edgeR = edge; playerR = p; }
       });
     });
 
     if (!edgeL || !edgeR) return;
 
-    const rayL = edgeL.clone().sub(ballPos).normalize();
-    const rayR = edgeR.clone().sub(ballPos).normalize();
+    const H_ball = ball.position.y;
+    const H_blockL = playerL.userData.jump || 2.43;
+    const H_blockR = playerR.userData.jump || 2.43;
 
-    const farL = edgeL.clone().addScaledVector(rayL, depth);
-    const farR = edgeR.clone().addScaledVector(rayR, depth);
+    let depth_L = depth;
+    let depth_R = depth;
 
-    allPositions.push(
-      edgeL.x, 0.01, edgeL.z,
-      edgeR.x, 0.01, edgeR.z,
-      farR.x, 0.01, farR.z,
-      farL.x, 0.01, farL.z
-    );
+    // Only calculate limited depth if ball is ABOVE the block reach
+    if (H_ball > H_blockL + 0.01) {
+      const distL = edgeL.distanceTo(ballPos);
+      depth_L = Math.min(depth, distL * (H_blockL / (H_ball - H_blockL)));
+    }
+
+    if (H_ball > H_blockR + 0.01) {
+      const distR = edgeR.distanceTo(ballPos);
+      depth_R = Math.min(depth, distR * (H_blockR / (H_ball - H_blockR)));
+    }
+
+    const clusterVerts = [];
+    const clusterIndices = [];
+
+    // Sort players by angle to find gaps and build bridges
+    const sorted = [...cluster].sort((a, b) => {
+      const angA = Math.atan2(a.position.z - ballPos.z, a.position.x - ballPos.x);
+      const angB = Math.atan2(b.position.z - ballPos.z, b.position.x - ballPos.x);
+      return angA - angB;
+    });
+
+    const playerWedges = sorted.map(p => {
+      const h = p.userData.jump || 2.43;
+      const blockerRadius = (p.userData.height || 1.9) * 0.13;
+      const bPos = p.position.clone(); bPos.y = 0;
+      const toBlocker = bPos.clone().sub(ballPos);
+      const dir = toBlocker.normalize();
+      const perp = new THREE.Vector3(-dir.z, 0, dir.x);
+
+      const eL = bPos.clone().addScaledVector(perp, blockerRadius);
+      const eR = bPos.clone().addScaledVector(perp, -blockerRadius);
+      const angL = Math.atan2(eL.z - ballPos.z, eL.x - ballPos.x);
+      const angR = Math.atan2(eR.z - ballPos.z, eR.x - ballPos.x);
+
+      const leftE = angL < angR ? eL : eR;
+      const rightE = angL < angR ? eR : eL;
+      const dL = (H_ball > h + 0.01) ? Math.min(depth, leftE.distanceTo(ballPos) * (h / (H_ball - h))) : depth;
+      const dR = (H_ball > h + 0.01) ? Math.min(depth, rightE.distanceTo(ballPos) * (h / (H_ball - h))) : depth;
+
+      return {
+        nearL: leftE,
+        farL: leftE.clone().addScaledVector(leftE.clone().sub(ballPos).normalize(), dL),
+        nearR: rightE,
+        farR: rightE.clone().addScaledVector(rightE.clone().sub(ballPos).normalize(), dR)
+      };
+    });
+
+    playerWedges.forEach((wedge, i) => {
+      // Add player's own shadow wedge
+      const base = clusterVerts.length;
+      clusterVerts.push(wedge.nearL, wedge.farL, wedge.farR, wedge.nearR);
+      clusterIndices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+
+      // Bridge to next player
+      if (i < playerWedges.length - 1) {
+        const next = playerWedges[i + 1];
+        const bridgeBase = clusterVerts.length;
+        clusterVerts.push(wedge.nearR, wedge.farR, next.farL, next.nearL);
+        clusterIndices.push(bridgeBase, bridgeBase + 1, bridgeBase + 2, bridgeBase, bridgeBase + 2, bridgeBase + 3);
+      }
+    });
+
+    const vertexOffset = allPositions.length / 3;
+    clusterVerts.forEach(v => allPositions.push(v.x, 0.01, v.z));
+    clusterIndices.forEach(idx => indices.push(vertexOffset + idx));
   });
 
   const positions = new Float32Array(allPositions);
-  const indices = [];
-  for (let i = 0; i < clusters.length; i++) {
-    const base = i * 4;
-    indices.push(base, base + 1, base + 2, base + 2, base + 3, base);
-  }
-
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
   geometry.setIndex(indices);
@@ -1367,7 +1433,7 @@ function updateNetShadow() {
     const t = effectiveHeight / (effectiveHeight - H_net);
     x_s1 = b.x + t * (-4.5 - b.x);
     x_s2 = b.x + t * (4.5 - b.x);
-    
+
     z_s = Math.max(z_s, -20);
   } else {
     // Ball (even with arc) cannot clear the net
@@ -1378,9 +1444,9 @@ function updateNetShadow() {
 
   const allPositions = [
     -4.5, 0.005, 0,
-     4.5, 0.005, 0,
-     x_s2, 0.005, z_s,
-     x_s1, 0.005, z_s
+    4.5, 0.005, 0,
+    x_s2, 0.005, z_s,
+    x_s1, 0.005, z_s
   ];
 
   const positions = new Float32Array(allPositions);
@@ -1412,18 +1478,18 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   setPointerFromEvent(event);
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(draggable, true);
-  
+
   if (!hits.length) {
     selectedPlayer = null;
     ui.playerUI.style.display = "none";
     selectionRing.visible = false;
     return;
   }
-  
+
   // Prevent OrbitControls (and other listeners) from initiating
   event.stopImmediatePropagation();
   controls.enabled = false;
-  
+
   activeDrag = hits[0].object;
   while (activeDrag.parent && !draggable.includes(activeDrag)) {
     activeDrag = activeDrag.parent;
@@ -1462,7 +1528,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     const dragHeight = activeDrag.userData.dragHeight ?? 0;
     activeDrag.position.set(dragPoint.x + dragOffset.x, dragHeight, dragPoint.z + dragOffset.z);
     clampToCourt(activeDrag);
-    
+
     // Proximity-based stance switching
     if (activeDrag.userData.kind === "player") {
       const isAtNet = activeDrag.position.z > -1.5;
@@ -1475,7 +1541,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
       selectionRing.position.x = activeDrag.position.x;
       selectionRing.position.z = activeDrag.position.z;
     }
-    
+
     updatePlayerRotations();
     updateAttackIndicator();
     updateBlockShadow();
@@ -1501,13 +1567,13 @@ function getFullStateJSON() {
       x: parseFloat(p.position.x.toFixed(2)),
       z: parseFloat(p.position.z.toFixed(2))
     })),
-    ball: { 
-      x: parseFloat(ball.position.x.toFixed(2)), 
-      z: parseFloat(ball.position.z.toFixed(2)) 
+    ball: {
+      x: parseFloat(ball.position.x.toFixed(2)),
+      z: parseFloat(ball.position.z.toFixed(2))
     },
-    target: { 
-      x: parseFloat(attackTarget.position.x.toFixed(2)), 
-      z: parseFloat(attackTarget.position.z.toFixed(2)) 
+    target: {
+      x: parseFloat(attackTarget.position.x.toFixed(2)),
+      z: parseFloat(attackTarget.position.z.toFixed(2))
     },
     physics: {
       height: ui.contactHeight.value,
@@ -1523,12 +1589,12 @@ function getFullStateJSON() {
 
 renderer.domElement.addEventListener("pointerup", () => {
   if (!activeDrag && !painting) return;
-  
+
   activeDrag = null;
   painting = false;
   zoneStart = null;
   currentZone = null;
-  
+
   renderer.domElement.style.cursor = paintMode ? "crosshair" : "default";
   controls.enabled = !paintMode;
   saveLastKnown();
@@ -1537,10 +1603,10 @@ renderer.domElement.addEventListener("pointerup", () => {
 // Paint zones
 renderer.domElement.addEventListener("pointerdown", (event) => {
   if (!paintMode) return;
-  
+
   setPointerFromEvent(event);
   raycaster.setFromCamera(pointer, camera);
-  
+
   // 1. Check handles
   const nodeHits = raycaster.intersectObjects(zoneNodeHandles);
   if (nodeHits.length) {
@@ -1552,7 +1618,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     dragOffset.copy(activeDrag.position).sub(dragPoint);
     return;
   }
-  
+
   // 2. Check existing zones for selection
   const zoneHits = raycaster.intersectObjects(zones);
   if (zoneHits.length) {
@@ -1560,7 +1626,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     selectZone(zoneHits[0].object);
     return;
   }
-  
+
   // 3. New zone creation
   hideZoneNodes();
   controls.enabled = false;
@@ -1571,7 +1637,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   });
   scene.add(currentZone);
   zones.push(currentZone);
-  
+
   // Initialize corners (needed for node visibility)
   const p = zoneStart.clone();
   updateZoneGeometry(currentZone, p, p.clone(), p.clone(), p.clone());
@@ -1580,7 +1646,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 
 renderer.domElement.addEventListener("pointermove", (event) => {
   if (!paintMode) return;
-  
+
   if (activeDrag && activeDrag.userData.kind === "zoneNode") {
     setPointerFromEvent(event);
     raycaster.setFromCamera(pointer, camera);
@@ -1593,7 +1659,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     }
     return;
   }
-  
+
   if (painting && currentZone && zoneStart) {
     const point = worldPointFromEvent(event);
     const p1 = zoneStart.clone();
@@ -1601,7 +1667,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     const p3 = point.clone();
     const p4 = new THREE.Vector3(zoneStart.x, 0, point.z);
     updateZoneGeometry(currentZone, p1, p2, p3, p4);
-    
+
     // Update handles to match
     zoneNodeHandles.forEach((h, i) => {
       h.position.copy(currentZone.userData.corners[i]);
@@ -1613,10 +1679,10 @@ renderer.domElement.addEventListener("pointermove", (event) => {
 ui.modeSwitch.addEventListener("click", (event) => {
   const option = event.target.closest(".switch-option");
   if (!option) return;
-  
+
   const mode = option.dataset.mode;
   setPaintMode(mode === "paint");
-  
+
   // UI Visuals
   ui.modeSwitch.classList.toggle("dragging", mode === "paint");
   ui.modeSwitch.querySelectorAll(".switch-option").forEach(opt => {
@@ -1642,7 +1708,7 @@ ui.rotateTeam.addEventListener("click", () => {
   // Rotate team clockwise (Standard VB rotation)
   // i=0(P1), i=1(P2), i=2(P3), i=3(P4), i=4(P5), i=5(P6)
   const oldPositions = players.map(p => p.position.clone());
-  
+
   // Rotation: P1 moves to P6's old spot, P6 to P5, P5 to P4, P4 to P3, P3 to P2, P2 to P1
   // This means P6 gets P1's old position, etc.
   players[5].position.copy(oldPositions[0]); // P6 -> Pos 1's old
@@ -1656,7 +1722,7 @@ ui.rotateTeam.addEventListener("click", () => {
     const isAtNet = p.position.z > -1.5;
     setPlayerStance(p, isAtNet);
   });
-  
+
   updatePlayerRotations();
   updateBlockShadow();
   saveLastKnown();
@@ -1666,7 +1732,7 @@ ui.contactHeight.addEventListener("input", (e) => {
   const val = parseFloat(e.target.value);
   ball.position.y = val;
   ball.userData.dragHeight = ball.position.y;
-  
+
   let label = "Medium";
   if (val < 1.6) label = "Underhand";
   else if (val < 2.3) label = "Low";
@@ -1683,7 +1749,7 @@ ui.contactHeight.addEventListener("input", (e) => {
 
 ui.attackPower.addEventListener("input", (e) => {
   const val = parseInt(e.target.value);
-  
+
   let label = "Normal";
   if (val < 25) label = "Free";
   else if (val < 50) label = "Weak";
@@ -1745,7 +1811,7 @@ ui.rotateTeam.addEventListener("click", () => {
 
   // Store current positions
   const pos = players.map(p => p.position.clone());
-  
+
   // Shift: 
   // Player 1 (idx 0) moves to Player 6's spot (idx 5)
   // Player 6 (idx 5) moves to Player 5's spot (idx 4)
@@ -1753,7 +1819,7 @@ ui.rotateTeam.addEventListener("click", () => {
   // Player 4 (idx 3) moves to Player 3's spot (idx 2)
   // Player 3 (idx 2) moves to Player 2's spot (idx 1)
   // Player 2 (idx 1) moves to Player 1's spot (idx 0)
-  
+
   const oldPos = [...pos];
   players[0].position.copy(oldPos[5]);
   players[5].position.copy(oldPos[4]);
@@ -1867,7 +1933,7 @@ function generateShareUrl() {
   const base64 = btoa(unescape(encodeURIComponent(json)));
   const url = new URL(window.location.href);
   url.searchParams.set("s", base64);
-  
+
   navigator.clipboard.writeText(url.toString()).then(() => {
     alert("Shareable URL copied to clipboard!");
   }).catch(() => {
@@ -1914,7 +1980,7 @@ function loadFromUrl() {
       };
       applyTacticalState(legacyData);
     }
-    
+
     // Clear URL after loading to avoid re-loading on refresh
     window.history.replaceState({}, document.title, window.location.pathname);
     return true;
@@ -1966,7 +2032,7 @@ let time = 0;
 function animate() {
   requestAnimationFrame(animate);
   time += 0.016;
-  
+
   controls.update();
 
   players.forEach((player) => {
@@ -1979,7 +2045,7 @@ function animate() {
   attackTarget.material.opacity = 0.4 + pulse * 0.4;
   attackTarget.scale.setScalar(0.95 + pulse * 0.15);
   attackTargetInner.material.opacity = 0.6 + pulse * 0.4;
-  
+
   // Subtle ball rotation
   ball.rotation.x += 0.01;
   ball.rotation.y += 0.005;
