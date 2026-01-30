@@ -610,13 +610,14 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   const shortsH = thighH * 0.35 + hipsH;  // Shorter (was 0.65)
   const shortsY = kneeY + thighH * 0.65;  // Starts higher (was 0.35)
   const shortsTopRad = hipsW / 2 + H * 0.01;
-  const shortsBotRad = hipsW / 2 + H * 0.045; // Narrower (was based on maxFootSpacing)
+  const shortsBotRad = hipsW / 2 + H * 0.08; // Wider to accommodate athletic stance
   // CylinderGeometry(radiusTop, radiusBottom, height, ...)
   const shortsGeo = new THREE.CylinderGeometry(shortsTopRad, shortsBotRad, shortsH, 12);
 
   const shorts = new THREE.Mesh(shortsGeo, shortsMat);
   shorts.name = "shorts";
   shorts.position.set(0, shortsY + shortsH / 2, 0);
+  shorts.scale.z = 0.7; // Elliptical shorts
   shorts.castShadow = true;
   group.add(shorts);
 
@@ -650,11 +651,13 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   const shoulderGeo = new THREE.SphereGeometry(shoulderRad, 12, 12);
 
   const leftShoulder = new THREE.Mesh(shoulderGeo, jerseyMat);
+  leftShoulder.name = "leftShoulder";
   leftShoulder.position.set(-shoulderW / 2, shoulderY - shoulderRad * 0.5, 0);
   leftShoulder.scale.set(1, 0.8, 0.8);
   group.add(leftShoulder);
 
   const rightShoulder = new THREE.Mesh(shoulderGeo, jerseyMat);
+  rightShoulder.name = "rightShoulder";
   rightShoulder.position.set(shoulderW / 2, shoulderY - shoulderRad * 0.5, 0);
   rightShoulder.scale.set(1, 0.8, 0.8);
   group.add(rightShoulder);
@@ -718,6 +721,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   const neckRad = H * 0.028;
   const neckGeo = new THREE.CylinderGeometry(neckRad, neckRad * 1.1, neckH, 12);
   const neck = new THREE.Mesh(neckGeo, skinMat);
+  neck.name = "neck";
   neck.position.set(0, neckY + neckH / 2, 0);
   group.add(neck);
 
@@ -727,6 +731,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   const headGeo = new THREE.SphereGeometry(headRad, 20, 20);
 
   const head = new THREE.Mesh(headGeo, skinMat);
+  head.name = "head";
   head.position.set(0, headY + headRad, 0);
   head.scale.set(0.9, 1, 0.85);  // Slightly oval
   head.castShadow = true;
@@ -735,6 +740,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   // Hair
   const hairGeo = new THREE.SphereGeometry(headRad * 1.05, 20, 20, 0, Math.PI * 2, 0, Math.PI * 0.55);
   const hair = new THREE.Mesh(hairGeo, hairMat);
+  hair.name = "hair";
   hair.position.copy(head.position);
   hair.position.y += headRad * 0.1;
   hair.scale.copy(head.scale);
@@ -784,7 +790,13 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
     thighH: thighH,
     legSpacing: legSpacing,
     kneeY: kneeY,
-    hipsH: hipsH
+    hipsH: hipsH,
+    torsoY: torsoY,
+    torsoH: torsoH,
+    neckY: neckY,
+    neckH: neckH,
+    headY: headY,
+    headRad: headRad
   };
 
   setPlayerStance(group, isBlocker);
@@ -817,6 +829,11 @@ function setPlayerStance(player, isBlocker) {
   const leftHand = player.getObjectByName("leftHand");
   const rightHand = player.getObjectByName("rightHand");
   const torso = player.getObjectByName("torso");
+  const neck = player.getObjectByName("neck");
+  const head = player.getObjectByName("head");
+  const hair = player.getObjectByName("hair");
+  const leftShoulder = player.getObjectByName("leftShoulder");
+  const rightShoulder = player.getObjectByName("rightShoulder");
   const labelSprite = player.getObjectByName("labelSprite");
 
   // Update jersey color based on role
@@ -858,7 +875,7 @@ function setPlayerStance(player, isBlocker) {
       // === BLOCKER STANCE: Arms raised straight up, STRAIGHT LEGS ===
       const armX = shoulderW / 2;
 
-      // Reset legs to straight position
+      // Reset legs
       if (leftCalf) {
         leftCalf.position.set(-legSpacing, footH + calfH / 2, 0);
         leftCalf.rotation.set(0, 0, 0);
@@ -882,8 +899,30 @@ function setPlayerStance(player, isBlocker) {
         rightThigh.rotation.set(0, 0, 0);
       }
 
-      // Reset torso
-      if (torso) torso.rotation.set(0, 0, 0);
+      // FULL RESET: Blocker torso must be upright and centered
+      if (torso) {
+        torso.position.set(0, legSegs.torsoY + legSegs.torsoH / 2, 0);
+        torso.rotation.set(0, 0, 0);
+      }
+      if (neck) {
+        neck.position.set(0, legSegs.neckY + legSegs.neckH / 2, 0);
+        neck.rotation.x = 0;
+      }
+      if (head) {
+        head.position.set(0, legSegs.headY + legSegs.headRad, 0);
+        head.rotation.x = 0;
+      }
+      if (hair) {
+        hair.position.set(0, legSegs.headY + legSegs.headRad + legSegs.headRad * 0.1, 0);
+        hair.rotation.x = -0.15;
+      }
+      if (leftShoulder) leftShoulder.position.set(-shoulderW / 2, shoulderY - H * 0.02, 0);
+      if (rightShoulder) rightShoulder.position.set(shoulderW / 2, shoulderY - H * 0.02, 0);
+
+      if (shorts) {
+        shorts.rotation.x = 0;
+        shorts.scale.z = 0.7;
+      }
 
       // Upper arms pointing up
       leftUpperArm.position.set(-armX, shoulderY + upperArmH / 2, 0);
@@ -911,89 +950,120 @@ function setPlayerStance(player, isBlocker) {
       if (leftHand) leftHand.position.set(-armX, handY, 0);
       if (rightHand) rightHand.position.set(armX, handY, 0);
 
-      // Dynamic jump height based on Block Reach
-      const standingReach = shoulderY + totalArmLen;
-      player.userData.dragHeight = Math.max(0.1, J - standingReach);
+      player.userData.dragHeight = Math.max(0.1, J - (shoulderY + totalArmLen));
     } else {
-      // === DEFENDER STANCE: Slight knee bend, arms bent at elbow ===
+      // === DEFENDER STANCE: Always lean towards local +Z (target) ===
       const armX = shoulderW / 2;
+      const wideStance = legSpacing * 1.85;
 
-      // Wider stance for defenders
-      const wideStance = legSpacing * 1.4;  // 40% wider than normal
-
-      // Slight knee bend parameters
-      const crouchAmount = 0.12;  // Subtle bend
-      const kneeForward = H * 0.05;  // Knees come forward slightly
+      const crouchAmount = 0.15;
+      const kneeForwardVal = H * 0.06;
       const hipsDrop = H * crouchAmount * 0.5;
-
-      // Calculate knee positions (forward AND wide)
       const newKneeY = baseKneeY - hipsDrop * 0.2;
 
-      // Calves tilt forward and stay wide
+      // Legs positioning (feet and knees wide and forward)
       if (leftCalf) {
-        leftCalf.position.set(-wideStance, footH + calfH / 2, kneeForward * 0.3);
-        leftCalf.rotation.set(0.15, 0, 0);
+        leftCalf.position.set(-wideStance, footH + calfH / 2, kneeForwardVal * 0.3);
+        leftCalf.rotation.set(0.2, 0, 0);
       }
       if (rightCalf) {
-        rightCalf.position.set(wideStance, footH + calfH / 2, kneeForward * 0.3);
-        rightCalf.rotation.set(0.15, 0, 0);
+        rightCalf.position.set(wideStance, footH + calfH / 2, kneeForwardVal * 0.3);
+        rightCalf.rotation.set(0.2, 0, 0);
       }
-
-      // Socks and Shoes move wide with feet
       if (leftSock) leftSock.position.x = -wideStance;
       if (rightSock) rightSock.position.x = wideStance;
       if (leftShoe) leftShoe.position.x = -wideStance;
       if (rightShoe) rightShoe.position.x = wideStance;
+      if (leftKnee) leftKnee.position.set(-wideStance, newKneeY, kneeForwardVal);
+      if (rightKnee) rightKnee.position.set(wideStance, newKneeY, kneeForwardVal);
 
-      // Knees forward and wide
-      if (leftKnee) leftKnee.position.set(-wideStance, newKneeY, kneeForward);
-      if (rightKnee) rightKnee.position.set(wideStance, newKneeY, kneeForward);
-
-      // Thighs angle outward from hips (legSpacing) to knees (wideStance)
       const thighX = (legSpacing + wideStance) / 2;
-      const angleOut = 0.18; // Radians outward
-
+      const angleOut = 0.35;
       if (leftThigh) {
-        leftThigh.position.set(-thighX, newKneeY + thighH / 2, kneeForward * 0.3);
-        leftThigh.rotation.set(-0.2, 0, -angleOut);  // Negated to angle outward
+        leftThigh.position.set(-thighX, newKneeY + thighH / 2, kneeForwardVal * 0.3);
+        leftThigh.rotation.set(-0.25, 0, -angleOut);
       }
       if (rightThigh) {
-        rightThigh.position.set(thighX, newKneeY + thighH / 2, kneeForward * 0.3);
-        rightThigh.rotation.set(-0.2, 0, angleOut);   // Negated to angle outward
+        rightThigh.position.set(thighX, newKneeY + thighH / 2, kneeForwardVal * 0.3);
+        rightThigh.rotation.set(-0.25, 0, angleOut);
       }
 
-      // Torso stays connected (slight forward lean only, no position change)
+      // Torso leans definitively forward (ready position)
+      const torsoTilt = 0.35;
+      const { torsoY, torsoH, neckH, headRad } = legSegs;
+      const pivotY = torsoY;
+      const cosT = Math.cos(torsoTilt);
+      const sinT = Math.sin(torsoTilt);
+
+      // Local rotated position (Positive Z is forward)
+      const getRotPos = (ry, rz) => ({
+        y: pivotY + ry * cosT - rz * sinT,
+        z: ry * sinT + rz * cosT
+      });
+
       if (torso) {
-        torso.rotation.set(0.08, 0, 0);  // Very slight forward lean
+        const tPos = getRotPos(torsoH / 2, 0);
+        torso.position.set(0, tPos.y, tPos.z);
+        torso.rotation.set(torsoTilt, 0, 0);
       }
 
-      // === ARMS: Simple elbow bend - upper arms down, forearms forward ===
+      if (shorts) {
+        shorts.rotation.x = torsoTilt * 0.4;
+        shorts.scale.z = 0.7;
+      }
 
-      // Upper arms hanging straight down at sides
-      leftUpperArm.position.set(-armX, shoulderY - upperArmH / 2, 0);
-      leftUpperArm.rotation.set(0, 0, 0.1);  // Slight outward angle
-      rightUpperArm.position.set(armX, shoulderY - upperArmH / 2, 0);
-      rightUpperArm.rotation.set(0, 0, -0.1);
+      // Update upper body follow
+      const shoulderRelY = torsoH - H * 0.02;
+      const sPos = getRotPos(shoulderRelY, 0);
+      if (leftShoulder) leftShoulder.position.set(-shoulderW / 2, sPos.y, sPos.z);
+      if (rightShoulder) rightShoulder.position.set(shoulderW / 2, sPos.y, sPos.z);
 
-      // Elbows at sides
-      const elbowY = shoulderY - upperArmH;
-      if (leftElbow) leftElbow.position.set(-armX, elbowY, 0);
-      if (rightElbow) rightElbow.position.set(armX, elbowY, 0);
+      const nPos = getRotPos(torsoH + neckH / 2, 0);
+      if (neck) {
+        neck.position.set(0, nPos.y, nPos.z);
+        neck.rotation.x = torsoTilt;
+      }
 
-      // Forearms bent forward at 90 degrees (ready position)
+      const hPos = getRotPos(torsoH + neckH + headRad, 0);
+      if (head) {
+        head.position.set(0, hPos.y, hPos.z);
+        head.rotation.x = torsoTilt * 0.8;
+      }
+      if (hair) {
+        const hrPos = getRotPos(torsoH + neckH + headRad + headRad * 0.1, 0);
+        hair.position.set(0, hrPos.y, hrPos.z);
+        hair.rotation.x = torsoTilt * 0.8 - 0.15;
+      }
+
+      // === ARMS: Follow leading shoulders ===
+      const armTilt = 0.45;
+      const armCos = Math.cos(armTilt);
+      const armSin = Math.sin(armTilt);
+
+      const armCenterY = sPos.y - (upperArmH / 2) * armCos;
+      const armCenterZ = sPos.z + (upperArmH / 2) * armSin;
+
+      leftUpperArm.position.set(-armX, armCenterY, armCenterZ);
+      leftUpperArm.rotation.set(armTilt, 0, 0.1);
+      rightUpperArm.position.set(armX, armCenterY, armCenterZ);
+      rightUpperArm.rotation.set(armTilt, 0, -0.1);
+
+      const elbowY = sPos.y - upperArmH * armCos;
+      const elbowZ = sPos.z + upperArmH * armSin;
+      if (leftElbow) leftElbow.position.set(-armX, elbowY, elbowZ);
+      if (rightElbow) rightElbow.position.set(armX, elbowY, elbowZ);
+
       if (leftForearm) {
-        leftForearm.position.set(-armX, elbowY, forearmH / 2);
-        leftForearm.rotation.set(-Math.PI / 2, 0, 0);  // 90 degree bend
+        leftForearm.position.set(-armX, elbowY, elbowZ + forearmH / 2);
+        leftForearm.rotation.set(-Math.PI / 2, 0, 0);
       }
       if (rightForearm) {
-        rightForearm.position.set(armX, elbowY, forearmH / 2);
+        rightForearm.position.set(armX, elbowY, elbowZ + forearmH / 2);
         rightForearm.rotation.set(-Math.PI / 2, 0, 0);
       }
 
-      // Hands in front at waist level
-      const handZ = forearmH;
-      if (leftHand) leftHand.position.set(-armX, elbowY, handZ);
-      if (rightHand) rightHand.position.set(armX, elbowY, handZ);
+      if (leftHand) leftHand.position.set(-armX, elbowY, elbowZ + forearmH);
+      if (rightHand) rightHand.position.set(armX, elbowY, elbowZ + forearmH);
 
       player.userData.dragHeight = 0;
     }
