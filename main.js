@@ -1036,17 +1036,18 @@ function setPlayerStance(player, isBlocker) {
       }
 
       // === ARMS: Follow leading shoulders ===
-      const armTilt = 0.45;
+      const armTilt = 0.55; // Definitive ready-to-move angle
       const armCos = Math.cos(armTilt);
       const armSin = Math.sin(armTilt);
+      const armRotX = Math.PI - armTilt; // Correctly oriented DOWN-FORWARD
 
       const armCenterY = sPos.y - (upperArmH / 2) * armCos;
       const armCenterZ = sPos.z + (upperArmH / 2) * armSin;
 
       leftUpperArm.position.set(-armX, armCenterY, armCenterZ);
-      leftUpperArm.rotation.set(armTilt, 0, 0.1);
+      leftUpperArm.rotation.set(armRotX, 0, 0.1);
       rightUpperArm.position.set(armX, armCenterY, armCenterZ);
-      rightUpperArm.rotation.set(armTilt, 0, -0.1);
+      rightUpperArm.rotation.set(armRotX, 0, -0.1);
 
       const elbowY = sPos.y - upperArmH * armCos;
       const elbowZ = sPos.z + upperArmH * armSin;
