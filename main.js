@@ -9,6 +9,8 @@ import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/
 
 const app = document.getElementById("app");
 const ui = {
+  menu: document.getElementById("ui"),
+  menuToggle: document.getElementById("menuToggle"),
   modeSwitch: document.getElementById("modeSwitch"),
   zoneColor: document.getElementById("zoneColor"),
   clearZones: document.getElementById("clearZones"),
@@ -682,7 +684,7 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   hair.name = "hair";
   hair.position.set(0, headRad + headRad * 0.1, 0);
   hair.scale.copy(headMesh.scale);
-  hair.rotation.x = -0.15;
+  hair.rotation.x = 0.25; // Tilted forward to look more like eyes are facing ahead
   headJoint.add(hair);
 
   // === LEGS (Hierarchical) ===
@@ -1253,6 +1255,13 @@ ball.position.set(0, 3, 4);
 ball.castShadow = true;
 ball.userData = { side: "away", dragHeight: 3, kind: "ball" };
 
+// Invisible hit area for easier grabbing on mobile
+const ballHitArea = new THREE.Mesh(
+  new THREE.SphereGeometry(0.5, 16, 16),
+  new THREE.MeshBasicMaterial({ visible: false })
+);
+ball.add(ballHitArea);
+
 const allPlayers = [...players, ball];
 scene.add(...players, ball);
 
@@ -1307,6 +1316,14 @@ const attackTarget = new THREE.Mesh(
 attackTarget.rotation.x = -Math.PI / 2;
 attackTarget.position.set(0, 0.06, -4.5);
 attackTarget.userData = { side: "home", dragHeight: 0.06, kind: "target" };
+
+// Invisible hit area for easier grabbing on mobile
+const targetHitArea = new THREE.Mesh(
+  new THREE.SphereGeometry(0.6, 16, 16),
+  new THREE.MeshBasicMaterial({ visible: false })
+);
+attackTarget.add(targetHitArea);
+
 scene.add(attackTarget);
 
 // Inner ring
@@ -1493,6 +1510,22 @@ function updatePlayerRotations() {
     // Smoothly or instantly face the ball
     if (player.position.distanceTo(target) > 0.1) {
       player.lookAt(target);
+    }
+
+    // Dynamic head pitching: make the head look up/down at the ball
+    const head = player.getObjectByName("head");
+    const torso = player.getObjectByName("torso");
+    if (head && torso) {
+      // Get ball position in torso's local space to find the correct pitch relative to the body
+      const localBall = torso.worldToLocal(ballPos.clone());
+      // The head joint is at torsoH, so we should consider that offset
+      const headHeight = player.userData.height * 0.3; // Approx torso height
+      const dy = localBall.y - headHeight;
+      const dz = localBall.z;
+      
+      const pitch = Math.atan2(dy, dz);
+      // Clamp the neck/head tilt to realistic ranges (-30 to +60 degrees approx)
+      head.rotation.x = -THREE.MathUtils.clamp(pitch, -Math.PI / 4, Math.PI / 2.5);
     }
   });
 }
@@ -2287,6 +2320,28 @@ addEventListener("resize", () => {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 });
 
+// Menu Toggle Logic
+function toggleMenu(force) {
+  const isClosed = ui.menu.classList.toggle("closed", force);
+  ui.menuToggle.innerHTML = isClosed 
+    ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>'
+    : '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+}
+
+ui.menuToggle.addEventListener("click", () => toggleMenu());
+
+// Auto-close menu on mobile when clicking the canvas
+renderer.domElement.addEventListener("pointerdown", () => {
+  if (window.innerWidth <= 600 && !ui.menu.classList.contains("closed")) {
+    toggleMenu(true);
+  }
+});
+
+// Initial state for mobile
+if (window.innerWidth <= 600) {
+  toggleMenu(true);
+}
+
 // Animate
 let time = 0;
 function animate() {
@@ -2309,6 +2364,11 @@ function animate() {
   // Subtle ball rotation
   ball.rotation.x += 0.01;
   ball.rotation.y += 0.005;
+
+  updatePlayerRotations();
+  updateAttackIndicator();
+  updateBlockShadow();
+  updateNetShadow();
 
   composer.render();
 }

@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Volleyball Tactics Board</title>
   <style>
     :root {
@@ -42,6 +43,79 @@
       overflow-y: auto;
       scrollbar-width: thin;
       scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      backdrop-filter: blur(10px);
+      padding: 20px;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+      z-index: 1000;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    }
+
+    #ui.closed {
+      transform: translateX(-110%);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #menuToggle {
+      display: none;
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      width: 44px;
+      height: 44px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
+      z-index: 1001;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+
+    /* Mobile adjustments */
+    @media (max-width: 600px) {
+      #menuToggle {
+        display: flex;
+      }
+      #ui {
+        top: 0;
+        left: 0;
+        width: 100%;
+        max-height: 80vh;
+        border-radius: 0 0 24px 24px;
+        transform: translateY(0);
+        margin: 0;
+        border-left: none;
+        border-right: none;
+        border-top: none;
+        padding: 24px;
+      }
+      #ui.closed {
+        transform: translateY(-100%);
+      }
+      button, select, input[type="text"] {
+        padding: 12px 16px;
+        font-size: 14px;
+      }
+      .control {
+        margin-bottom: 16px;
+      }
+      #legend {
+        bottom: 16px;
+        right: 16px;
+        font-size: 10px;
+        padding: 8px 12px;
+        grid-template-columns: auto 1fr;
+        gap: 4px 8px;
+      }
+      #status {
+        display: none;
+      }
     }
 
     #ui::-webkit-scrollbar {
@@ -248,6 +322,9 @@
 
 <body>
   <div id="app"></div>
+  <div id="menuToggle" title="Toggle Settings Menu">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+  </div>
   <script type="importmap">
     {
       "imports": {
