@@ -945,10 +945,16 @@ function setPlayerStance(player, isBlocker) {
         rightForearm.rotation.set(0, 0, 0);
       }
 
-      // Hands at top
+      // Hands at top (vertical for blocking)
       const handY = elbowY + forearmH;
-      if (leftHand) leftHand.position.set(-armX, handY, 0);
-      if (rightHand) rightHand.position.set(armX, handY, 0);
+      if (leftHand) {
+        leftHand.position.set(-armX, handY, 0);
+        leftHand.rotation.set(0, 0, 0);
+      }
+      if (rightHand) {
+        rightHand.position.set(armX, handY, 0);
+        rightHand.rotation.set(0, 0, 0);
+      }
 
       player.userData.dragHeight = Math.max(0.1, J - (shoulderY + totalArmLen));
     } else {
@@ -1063,8 +1069,15 @@ function setPlayerStance(player, isBlocker) {
         rightForearm.rotation.set(-Math.PI / 2, 0, 0);
       }
 
-      if (leftHand) leftHand.position.set(-armX, elbowY, elbowZ + forearmH);
-      if (rightHand) rightHand.position.set(armX, elbowY, elbowZ + forearmH);
+      // Hands at the end of the forearms (horizontal ready position)
+      if (leftHand) {
+        leftHand.position.set(-armX, elbowY, elbowZ + forearmH);
+        leftHand.rotation.set(Math.PI / 2, 0, 0);
+      }
+      if (rightHand) {
+        rightHand.position.set(armX, elbowY, elbowZ + forearmH);
+        rightHand.rotation.set(Math.PI / 2, 0, 0);
+      }
 
       player.userData.dragHeight = 0;
     }
