@@ -1336,9 +1336,8 @@ function updateBlockShadow() {
     if (!edgeL || !edgeR) return;
 
     const H_ball = ball.position.y;
-    const H_net_current = parseFloat(ui.netHeight.value);
-    const H_blockL = playerL.userData.jump || H_net_current;
-    const H_blockR = playerR.userData.jump || H_net_current;
+    const H_blockL = playerL.userData.jump || 3.10;
+    const H_blockR = playerR.userData.jump || 3.10;
 
     let depth_L = depth;
     let depth_R = depth;
@@ -1365,8 +1364,7 @@ function updateBlockShadow() {
     });
 
     const playerWedges = sorted.map(p => {
-      const H_net_current = parseFloat(ui.netHeight.value);
-      const h = p.userData.jump || H_net_current;
+      const h = p.userData.jump || 3.10;
       const blockerRadius = (p.userData.height || 1.9) * 0.13;
       const bPos = p.position.clone(); bPos.y = 0;
       const toBlocker = bPos.clone().sub(ballPos);
