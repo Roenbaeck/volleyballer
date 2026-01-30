@@ -813,6 +813,8 @@ function setPlayerStance(player, isBlocker) {
   const rightKnee = player.getObjectByName("rightKnee");
   const leftCalf = player.getObjectByName("leftCalf");
   const rightCalf = player.getObjectByName("rightCalf");
+  const leftShoe = player.getObjectByName("leftShoe");
+  const rightShoe = player.getObjectByName("rightShoe");
   const shorts = player.getObjectByName("shorts");
   const labelSprite = player.getObjectByName("labelSprite");
 
@@ -836,7 +838,7 @@ function setPlayerStance(player, isBlocker) {
   // 1. Reset all hierarchical rotations
   [hips, torso, neck, head, hair, leftShoulder, rightShoulder, leftUpperArm, rightUpperArm,
     leftElbow, rightElbow, leftForearm, rightForearm, leftThigh, rightThigh, leftKnee, rightKnee,
-    leftCalf, rightCalf, shorts].forEach(p => {
+    leftCalf, rightCalf, leftShoe, rightShoe, shorts].forEach(p => {
       if (p) {
         p.rotation.set(0, 0, 0);
         if (p.scale && p.name !== "labelSprite") p.scale.set(1, 1, 1);
@@ -853,10 +855,14 @@ function setPlayerStance(player, isBlocker) {
     if (rightHand) rightHand.rotation.set(0, 0, 0);
     if (shorts) shorts.scale.z = 0.7;
 
+    // Point feet down for jump
+    if (leftShoe) leftShoe.rotation.x = Math.PI / 4;
+    if (rightShoe) rightShoe.rotation.x = Math.PI / 4;
+
     // Reach calculation:
-    // Shoulder is at ~82% height. Arms are ~30% height (16+14). 
+    // Shoulder is at ~82% height. Arms are ~30% height (16+14).
     // Total reach is approx 112% height, but with hierarchy and slight angles, let's say 125% to be safe?
-    // Actually, J is the TOP of the reach. 
+    // Actually, J is the TOP of the reach.
     // If J = 3.10 and Player H = 1.90.
     // Standing Reach = H * 1.25 (approx).
     const standingReach = H * 1.25;
