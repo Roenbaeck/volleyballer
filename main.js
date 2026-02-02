@@ -2124,12 +2124,7 @@ ui.contactHeight.addEventListener("input", (e) => {
   ball.position.y = val;
   ball.userData.dragHeight = ball.position.y;
 
-  let label = "Medium";
-  if (val < 1.6) label = "Underhand";
-  else if (val < 2.3) label = "Low";
-  else if (val > 3.3) label = "Extreme";
-  else if (val > 2.8) label = "High";
-  ui.heightValue.textContent = label;
+  ui.heightValue.textContent = val.toFixed(2) + "m";
 
   updateAttackIndicator();
   updatePlayerRotations();
@@ -2405,7 +2400,7 @@ if (!loadedFromUrl) {
 }
 
 // Initial labels for attack physics
-ui.heightValue.textContent = "High";
+ui.heightValue.textContent = "3.00m";
 ui.powerValue.textContent = "Normal";
 
 // Resize
