@@ -82,6 +82,8 @@ const COURT = {
   halfLength: 9
 };
 
+const BLOCK_THRESHOLD = 0.9; // Max distance between blockers to be considered a "tight" unified block
+
 // Scene
 const scene = new THREE.Scene();
 
@@ -1487,16 +1489,111 @@ function updateAttackIndicator() {
 
   const crossesNet = (start.z * end.z) <= 0;
   const basePeak = Math.max(start.y, end.y);
-  const minNetClearance = 2.55;
-  const arcHeight = (crossesNet ? Math.max(basePeak, minNetClearance) : basePeak) + arcBoost;
+  const hNet = parseFloat(ui.netHeight.value);
+  const arcHeight = (crossesNet ? Math.max(basePeak, hNet + 0.1) : basePeak) + arcBoost;
 
   // Control point for quadratic curve
   const control = new THREE.Vector3(midX, arcHeight + 0.2, midZ);
   const curve = new THREE.QuadraticBezierCurve3(start, control, end);
 
-  // Re-generate tube geometry for thickness
+  // --- Collision Detection ---
+  let collisionT = 1.0;
+  let collisionType = "none";
+  const samples = 60;
+  const activeBlockers = players.filter(p => p.userData.isBlocker);
+
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples;
+    const p = curve.getPoint(t);
+
+    // 1. Net Collision (plane at z=0, from y=0 to y=hNet, within court width)
+    const prevP = curve.getPoint((i - 1) / samples);
+    if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
+      // Find exact t where z=0
+      const tNet = (prevP.z) / (prevP.z - p.z);
+      const lerpT = ((i - 1) / samples) + (tNet / samples);
+      const pNet = curve.getPoint(lerpT);
+      
+      if (pNet.y <= hNet && Math.abs(pNet.x) <= COURT.halfWidth + 0.5) {
+        collisionT = lerpT;
+        collisionType = "net";
+        break;
+      }
+    }
+
+    // 2. Blocker Collision (Individual and Tight Blocks)
+    for (let j = 0; j < activeBlockers.length; j++) {
+      const bA = activeBlockers[j];
+      const bAPos = bA.position;
+      const bAH = bA.userData.height || 1.9;
+      const bAJump = bA.userData.jump || 3.10;
+      const radA = bAH * 0.18; // Increased slightly for better collision feeling
+
+      // Individual check
+      const dx = p.x - bAPos.x;
+      const dz = p.z - bAPos.z;
+      if ((dx * dx + dz * dz) < radA * radA && p.y <= bAJump) {
+        collisionT = t;
+        collisionType = "block";
+        break;
+      }
+
+      // "Tight Block" check with other blockers
+      for (let k = j + 1; k < activeBlockers.length; k++) {
+        const bB = activeBlockers[k];
+        const bBPos = bB.position;
+        const bBJump = bB.userData.jump || 3.10;
+        
+        const distAB = bAPos.distanceTo(bBPos);
+        if (distAB < BLOCK_THRESHOLD) { // Threshold for "tight" block
+          // Check distance of point p to segment AB
+          const v = new THREE.Vector3().subVectors(bBPos, bAPos);
+          const w = new THREE.Vector3().subVectors(p, bAPos);
+          v.y = 0; w.y = 0; // Project to floor for proximity check
+          
+          const c1 = w.dot(v);
+          if (c1 <= 0) continue;
+          const c2 = v.dot(v);
+          if (c2 <= c1) continue;
+          
+          const b = c1 / c2;
+          const pb = bAPos.clone().add(v.clone().multiplyScalar(b));
+          const distToSegmentSq = (p.x - pb.x) * (p.x - pb.x) + (p.z - pb.z) * (p.z - pb.z);
+          
+          if (distToSegmentSq < (radA * radA) && p.y <= Math.max(bAJump, bBJump)) {
+            collisionT = t;
+            collisionType = "block";
+            break;
+          }
+        }
+      }
+      if (collisionType !== "none") break;
+    }
+    if (collisionType !== "none") break;
+  }
+
+  // Update visual appearance
+  if (collisionType !== "none") {
+    attackLineMat.color.set(0xff4444); // Red for blocked
+    attackTarget.material.color.set(0xff4444);
+    attackTargetInner.material.color.set(0xffffff);
+  } else {
+    attackLineMat.color.set(0x8b00ff); // Normal purple
+    attackTarget.material.color.set(0x8b00ff);
+    attackTargetInner.material.color.set(0xffffff);
+  }
+  attackTarget.visible = true; // Always visible now
+
+  // Re-generate tube geometry (trimmed to collision point)
+  const segments = 32;
+  const points = [];
+  for (let i = 0; i <= segments; i++) {
+    points.push(curve.getPoint((i / segments) * collisionT));
+  }
+  const trimmedCurve = new THREE.CatmullRomCurve3(points);
+
   attackLine.geometry.dispose();
-  attackLine.geometry = new THREE.TubeGeometry(curve, 32, 0.04, 8, false);
+  attackLine.geometry = new THREE.TubeGeometry(trimmedCurve, segments, 0.04, 8, false);
 }
 
 function updatePlayerRotations() {
@@ -1549,11 +1646,11 @@ function updateBlockShadow() {
     // Each blocker is its own cluster
     activeBlockers.forEach(p => clusters.push([p]));
   } else {
-    // Cluster adjacent blockers (distance < 0.9m) to form single unified wedges
+    // Cluster adjacent blockers (distance < BLOCK_THRESHOLD) to form single unified wedges
     const connections = activeBlockers.map(() => []);
     for (let i = 0; i < activeBlockers.length; i++) {
       for (let j = i + 1; j < activeBlockers.length; j++) {
-        if (activeBlockers[i].position.distanceTo(activeBlockers[j].position) < 0.9) {
+        if (activeBlockers[i].position.distanceTo(activeBlockers[j].position) < BLOCK_THRESHOLD) {
           connections[i].push(j);
           connections[j].push(i);
         }
