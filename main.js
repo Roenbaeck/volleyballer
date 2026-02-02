@@ -83,6 +83,7 @@ const COURT = {
 };
 
 const BLOCK_THRESHOLD = 0.9; // Max distance between blockers to be considered a "tight" unified block
+const BLOCKER_RADIUS_FACTOR = 0.16; // Multiplier for player height to determine blocking width
 
 // Scene
 const scene = new THREE.Scene();
@@ -1499,7 +1500,7 @@ function updateAttackIndicator() {
   // --- Collision Detection ---
   let collisionT = 1.0;
   let collisionType = "none";
-  const samples = 60;
+  const samples = 80;
   const activeBlockers = players.filter(p => p.userData.isBlocker);
 
   for (let i = 1; i <= samples; i++) {
@@ -1527,7 +1528,7 @@ function updateAttackIndicator() {
       const bAPos = bA.position;
       const bAH = bA.userData.height || 1.9;
       const bAJump = bA.userData.jump || 3.10;
-      const radA = bAH * 0.18; // Increased slightly for better collision feeling
+      const radA = bAH * BLOCKER_RADIUS_FACTOR;
 
       // Individual check
       const dx = p.x - bAPos.x;
@@ -1690,7 +1691,7 @@ function updateBlockShadow() {
 
     cluster.forEach(player => {
       const H = player.userData.height || 1.9;
-      const blockerRadius = H * 0.13;
+      const blockerRadius = H * BLOCKER_RADIUS_FACTOR;
       const bPos = player.position.clone(); bPos.y = 0;
       const toBlocker = bPos.clone().sub(ballPos);
       if (toBlocker.lengthSq() < 0.001) return;
@@ -1740,7 +1741,7 @@ function updateBlockShadow() {
 
     const playerWedges = sorted.map(p => {
       const h = p.userData.jump || 3.10;
-      const blockerRadius = (p.userData.height || 1.9) * 0.13;
+      const blockerRadius = (p.userData.height || 1.9) * BLOCKER_RADIUS_FACTOR;
       const bPos = p.position.clone(); bPos.y = 0;
       const toBlocker = bPos.clone().sub(ballPos);
       const dir = toBlocker.normalize();
