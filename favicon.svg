@@ -1,36 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
   <defs>
-    <radialGradient id="ballGradient" cx="35%" cy="30%" r="75%">
+    <radialGradient id="bg" cx="38%" cy="32%" r="65%">
       <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="40%" stop-color="#fcfcfc"/>
       <stop offset="100%" stop-color="#d0d0d0"/>
     </radialGradient>
-    <clipPath id="circleClip">
+    <clipPath id="ball">
       <circle cx="32" cy="32" r="30"/>
     </clipPath>
   </defs>
 
-  <!-- Base Circle with Shadow -->
-  <circle cx="33" cy="33" r="30" fill="rgba(0,0,0,0.2)"/>
-  <circle cx="32" cy="32" r="30" fill="url(#ballGradient)" stroke="#888" stroke-width="0.5"/>
+  <!-- Ball base -->
+  <circle cx="32" cy="32" r="30" fill="url(#bg)"/>
 
-  <!-- Volleyball Panels (18-panel rotation) -->
-  <g clip-path="url(#circleClip)" fill="none" stroke="#444444" stroke-width="1.8" stroke-linecap="round">
-    <!-- Horizontal section (Middle) -->
-    <path d="M2.5 24 Q 32 24 61.5 24" />
-    <path d="M2 40 Q 32 40 62 40" />
-    <path d="M22 24 L 22 40 M 42 24 L 42 40" stroke-width="1.5" />
+  <g clip-path="url(#ball)">
+    <!-- Blue panels (top-left, bottom-right) -->
+    <path d="M32 2 C30 14, 30 24, 32 32 C24 24, 14 18, 2 20 L2 2 Z" fill="#003DA5"/>
+    <path d="M32 62 C34 50, 34 40, 32 32 C40 40, 50 46, 62 44 L62 62 Z" fill="#003DA5"/>
 
-    <!-- Top section (Curved panels) -->
-    <path d="M12 24 C 12 10, 52 10, 52 24" />
-    <path d="M32 2 L 32 12 M 22 6 L 26 12 M 42 6 L 38 12" stroke-width="1.2" opacity="0.7" />
+    <!-- Yellow panels (top-right, bottom-left) -->
+    <path d="M32 2 C34 14, 34 24, 32 32 C40 24, 50 18, 62 20 L62 2 Z" fill="#FFD100"/>
+    <path d="M32 62 C30 50, 30 40, 32 32 C24 40, 14 46, 2 44 L2 62 Z" fill="#FFD100"/>
 
-    <!-- Bottom section (Curved panels) -->
-    <path d="M12 40 C 12 54, 52 54, 52 40" />
-    <path d="M32 62 L 32 52 M 22 58 L 26 52 M 42 58 L 38 52" stroke-width="1.2" opacity="0.7" />
+    <!-- Seam lines -->
+    <g fill="none" stroke="#222" stroke-width="1.6" stroke-linecap="round">
+      <path d="M32 2 C30 14, 30 24, 32 32 C34 42, 34 50, 32 62"/>
+      <path d="M2 20 C14 18, 24 24, 32 32 C40 40, 50 46, 62 44"/>
+      <path d="M62 20 C50 18, 40 24, 32 32 C24 40, 14 46, 2 44"/>
+    </g>
   </g>
 
-  <!-- Slight gloss -->
-  <ellipse cx="24" cy="20" rx="10" ry="6" fill="white" fill-opacity="0.3" transform="rotate(-30, 24, 20)" />
+  <!-- Outline -->
+  <circle cx="32" cy="32" r="30" fill="none" stroke="#888" stroke-width="0.6"/>
+
+  <!-- Gloss highlight -->
+  <ellipse cx="22" cy="20" rx="10" ry="7" fill="white" fill-opacity="0.25" transform="rotate(-30, 22, 20)"/>
 </svg>
