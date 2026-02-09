@@ -499,6 +499,17 @@
   </div>
   <div id="status">Tip: zoom with trackpad, shift-drag to orbit.</div>
   <script type="module" src="./main.js"></script>
+  <script>
+    // Increment visitor counter
+    fetch('https://volleyballer.lars-ronnback.workers.dev/')
+      .then(response => response.json())
+      .then(data => {
+        console.log('Visit count:', data.count);
+        // Optionally display it somewhere:
+        // document.getElementById('visitor-count').textContent = data.count;
+      })
+      .catch(err => console.error('Counter failed:', err));
+  </script>
 </body>
 
 </html>
