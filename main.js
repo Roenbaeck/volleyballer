@@ -1973,8 +1973,17 @@ function checkAntennaShadowCollision(trajectoryPoint, ballPosition, antennaX, si
   const signedAntennaX = side * antennaX;
   
   // Check if ball is on attacking side and beyond the antenna
-  if (ballPosition.z <= 0 || side * ballPosition.x <= signedAntennaX) {
+  // Left antenna (side=-1): ball must be LEFT of left antenna (ball.x < -antennaX)
+  // Right antenna (side=1): ball must be RIGHT of right antenna (ball.x > antennaX)
+  if (ballPosition.z <= 0) {
     return false;
+  }
+  
+  if (side === -1 && ballPosition.x >= signedAntennaX) {
+    return false; // Left antenna: ball not far enough left
+  }
+  if (side === 1 && ballPosition.x <= signedAntennaX) {
+    return false; // Right antenna: ball not far enough right
   }
   
   const dx = signedAntennaX - ballPosition.x;
