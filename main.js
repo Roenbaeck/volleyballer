@@ -1332,9 +1332,9 @@ scene.add(netShadow);
 
 // Antenna shadows (show unreachable areas based on antenna positioning)
 const antennaShadowMat = new THREE.MeshBasicMaterial({
-  color: 0xff0000,
+  color: 0x000000,
   transparent: true,
-  opacity: 0.35,
+  opacity: 0.45,
   side: THREE.DoubleSide,
   depthWrite: false
 });
@@ -1929,7 +1929,8 @@ function updateAntennaShadows() {
     const dz = 0 - b.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist > 0.01) {
+    if (dist > 0.01 && b.x < -antennaX) {
+      // Ball is to the left of the left antenna - shadow shows unreachable right side
       const dirX = dx / dist;
       const dirZ = dz / dist;
 
@@ -1938,19 +1939,18 @@ function updateAntennaShadows() {
       const endX = -antennaX + dirX * shadowDepth;
       const endZ = 0 + dirZ * shadowDepth;
 
-      // Create a wedge showing the blocked area
-      // The wedge goes from the court edge through the antenna position
-      const leftEdge = -COURT.halfWidth - 2; // Left court boundary (extended)
+      // Clamp endZ to stay within reasonable bounds
+      const clampedEndZ = Math.max(endZ, -COURT.halfLength);
 
+      // Create a triangular wedge from antenna position
       const leftPositions = [
         -antennaX, 0.008, 0,  // Antenna position at net
-        leftEdge, 0.008, 0,   // Left edge at net
-        leftEdge, 0.008, endZ, // Left edge extended back
-        endX, 0.008, endZ     // Shadow end point
+        -antennaX, 0.008, clampedEndZ,  // Straight back from antenna
+        endX, 0.008, clampedEndZ     // Shadow end point
       ];
 
       const positions = new Float32Array(leftPositions);
-      const indices = [0, 1, 2, 0, 2, 3];
+      const indices = [0, 1, 2];
 
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
@@ -1975,7 +1975,8 @@ function updateAntennaShadows() {
     const dz = 0 - b.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist > 0.01) {
+    if (dist > 0.01 && b.x > antennaX) {
+      // Ball is to the right of the right antenna - shadow shows unreachable left side
       const dirX = dx / dist;
       const dirZ = dz / dist;
 
@@ -1984,18 +1985,18 @@ function updateAntennaShadows() {
       const endX = antennaX + dirX * shadowDepth;
       const endZ = 0 + dirZ * shadowDepth;
 
-      // Create a wedge showing the blocked area
-      const rightEdge = COURT.halfWidth + 2; // Right court boundary (extended)
+      // Clamp endZ to stay within reasonable bounds
+      const clampedEndZ = Math.max(endZ, -COURT.halfLength);
 
+      // Create a triangular wedge from antenna position
       const rightPositions = [
         antennaX, 0.008, 0,   // Antenna position at net
-        rightEdge, 0.008, 0,  // Right edge at net
-        rightEdge, 0.008, endZ, // Right edge extended back
-        endX, 0.008, endZ     // Shadow end point
+        antennaX, 0.008, clampedEndZ,  // Straight back from antenna
+        endX, 0.008, clampedEndZ     // Shadow end point
       ];
 
       const positions = new Float32Array(rightPositions);
-      const indices = [0, 1, 2, 0, 2, 3];
+      const indices = [0, 1, 2];
 
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
