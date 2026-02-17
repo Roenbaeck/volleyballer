@@ -84,6 +84,9 @@ const COURT = {
 
 const BLOCK_THRESHOLD = 0.9; // Max distance between blockers to be considered a "tight" unified block
 const BLOCKER_RADIUS_FACTOR = 0.16; // Multiplier for player height to determine blocking width
+const ANTENNA_SHADOW_DEPTH = 20; // How far antenna shadow extends into the court
+const MIN_SHADOW_DISTANCE_THRESHOLD = 0.01; // Minimum distance threshold to prevent division issues
+const TRIANGLE_EPSILON = 0.0001; // Epsilon for degenerate triangle detection
 
 // Scene
 const scene = new THREE.Scene();
@@ -1586,54 +1589,19 @@ function updateAttackIndicator() {
     if (p.z < 0) {
       const b = ball.position.clone();
       const antennaX = COURT.halfWidth;
-      const depth = 20; // Same depth as shadow rendering
       
-      // Check LEFT antenna shadow
-      if (b.z > 0 && b.x < -antennaX) {
-        const dx = -antennaX - b.x;
-        const dz = 0 - b.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        
-        if (dist > 0.01) {
-          const dirX = dx / dist;
-          const dirZ = dz / dist;
-          const shadowDepth = depth;
-          const endX = -antennaX + dirX * shadowDepth;
-          const endZ = 0 + dirZ * shadowDepth;
-          const clampedEndZ = Math.max(endZ, -COURT.halfLength);
-          
-          // Check if point p is inside the shadow triangle
-          // Triangle vertices: (-antennaX, 0), (-antennaX, clampedEndZ), (endX, clampedEndZ)
-          if (isPointInTriangle(p.x, p.z, -antennaX, 0, -antennaX, clampedEndZ, endX, clampedEndZ)) {
-            collisionT = t;
-            collisionType = "antenna";
-            break;
-          }
-        }
+      // Check LEFT antenna shadow (side = -1)
+      if (checkAntennaShadowCollision(p, b, antennaX, -1)) {
+        collisionT = t;
+        collisionType = "antenna";
+        break;
       }
       
-      // Check RIGHT antenna shadow
-      if (b.z > 0 && b.x > antennaX) {
-        const dx = antennaX - b.x;
-        const dz = 0 - b.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-        
-        if (dist > 0.01) {
-          const dirX = dx / dist;
-          const dirZ = dz / dist;
-          const shadowDepth = depth;
-          const endX = antennaX + dirX * shadowDepth;
-          const endZ = 0 + dirZ * shadowDepth;
-          const clampedEndZ = Math.max(endZ, -COURT.halfLength);
-          
-          // Check if point p is inside the shadow triangle
-          // Triangle vertices: (antennaX, 0), (antennaX, clampedEndZ), (endX, clampedEndZ)
-          if (isPointInTriangle(p.x, p.z, antennaX, 0, antennaX, clampedEndZ, endX, clampedEndZ)) {
-            collisionT = t;
-            collisionType = "antenna";
-            break;
-          }
-        }
+      // Check RIGHT antenna shadow (side = 1)
+      if (checkAntennaShadowCollision(p, b, antennaX, 1)) {
+        collisionT = t;
+        collisionType = "antenna";
+        break;
       }
     }
 
@@ -1970,7 +1938,7 @@ function updateNetShadow() {
 function isPointInTriangle(px, pz, v1x, v1z, v2x, v2z, v3x, v3z) {
   // Using barycentric coordinates
   const denom = (v2z - v3z) * (v1x - v3x) + (v3x - v2x) * (v1z - v3z);
-  if (Math.abs(denom) < 0.0001) return false;
+  if (Math.abs(denom) < TRIANGLE_EPSILON) return false;
   
   const a = ((v2z - v3z) * (px - v3x) + (v3x - v2x) * (pz - v3z)) / denom;
   const b = ((v3z - v1z) * (px - v3x) + (v1x - v3x) * (pz - v3z)) / denom;
@@ -1979,10 +1947,38 @@ function isPointInTriangle(px, pz, v1x, v1z, v2x, v2z, v3x, v3z) {
   return a >= 0 && b >= 0 && c >= 0;
 }
 
+// Helper function to check antenna shadow collision for a given side
+function checkAntennaShadowCollision(p, b, antennaX, side) {
+  // side: -1 for left antenna, 1 for right antenna
+  const signedAntennaX = side * antennaX;
+  
+  // Check if ball is on attacking side and beyond the antenna
+  if (b.z <= 0 || side * b.x <= signedAntennaX) {
+    return false;
+  }
+  
+  const dx = signedAntennaX - b.x;
+  const dz = 0 - b.z;
+  const dist = Math.sqrt(dx * dx + dz * dz);
+  
+  if (dist <= MIN_SHADOW_DISTANCE_THRESHOLD) {
+    return false;
+  }
+  
+  const dirX = dx / dist;
+  const dirZ = dz / dist;
+  const endX = signedAntennaX + dirX * ANTENNA_SHADOW_DEPTH;
+  const endZ = 0 + dirZ * ANTENNA_SHADOW_DEPTH;
+  const clampedEndZ = Math.max(endZ, -COURT.halfLength);
+  
+  // Check if point p is inside the shadow triangle
+  // Triangle vertices: (signedAntennaX, 0), (signedAntennaX, clampedEndZ), (endX, clampedEndZ)
+  return isPointInTriangle(p.x, p.z, signedAntennaX, 0, signedAntennaX, clampedEndZ, endX, clampedEndZ);
+}
+
 function updateAntennaShadows() {
   const b = ball.position.clone();
   const antennaX = COURT.halfWidth; // Position of antennas at court edges
-  const depth = 20; // How far the shadow extends into the court
 
   // Calculate shadows for both left and right antennas
   // These shadows show areas that can't be reached because the ball would pass outside the antenna
@@ -1998,13 +1994,13 @@ function updateAntennaShadows() {
     const dz = 0 - b.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist > 0.01 && b.x < -antennaX) {
+    if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && b.x < -antennaX) {
       // Ball is to the left of the left antenna - shadow shows unreachable right side
       const dirX = dx / dist;
       const dirZ = dz / dist;
 
       // Shadow extends from left antenna into opponent's court
-      const shadowDepth = depth;
+      const shadowDepth = ANTENNA_SHADOW_DEPTH;
       const endX = -antennaX + dirX * shadowDepth;
       const endZ = 0 + dirZ * shadowDepth;
 
@@ -2044,13 +2040,13 @@ function updateAntennaShadows() {
     const dz = 0 - b.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist > 0.01 && b.x > antennaX) {
+    if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && b.x > antennaX) {
       // Ball is to the right of the right antenna - shadow shows unreachable left side
       const dirX = dx / dist;
       const dirZ = dz / dist;
 
       // Shadow extends from right antenna into opponent's court
-      const shadowDepth = depth;
+      const shadowDepth = ANTENNA_SHADOW_DEPTH;
       const endX = antennaX + dirX * shadowDepth;
       const endZ = 0 + dirZ * shadowDepth;
 
