@@ -1918,9 +1918,9 @@ function updateAntennaShadows() {
   // Calculate shadows for both left and right antennas
   // These shadows show areas that can't be reached because the ball would pass outside the antenna
 
-  // LEFT ANTENNA SHADOW (for balls on the left side)
-  if (b.x < -antennaX || b.z < 0) {
-    // Ball is beyond left antenna or on defending side - no left shadow needed
+  // LEFT ANTENNA SHADOW (shows unreachable area when ball would pass outside left antenna)
+  if (b.z < 0) {
+    // Ball is on defending side - no shadow needed
     leftAntennaShadow.geometry.dispose();
     leftAntennaShadow.geometry = new THREE.BufferGeometry();
   } else {
@@ -1964,9 +1964,9 @@ function updateAntennaShadows() {
     }
   }
 
-  // RIGHT ANTENNA SHADOW (for balls on the right side)
-  if (b.x > antennaX || b.z < 0) {
-    // Ball is beyond right antenna or on defending side - no right shadow needed
+  // RIGHT ANTENNA SHADOW (shows unreachable area when ball would pass outside right antenna)
+  if (b.z < 0) {
+    // Ball is on defending side - no shadow needed
     rightAntennaShadow.geometry.dispose();
     rightAntennaShadow.geometry = new THREE.BufferGeometry();
   } else {
