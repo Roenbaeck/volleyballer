@@ -1553,6 +1553,54 @@ function updateAttackIndicator() {
   // Pre-compute values for shadow collision detection
   const ballPosition = ball.position;
   const antennaX = COURT.halfWidth;
+  
+  // Pre-compute antenna shadow triangles if ball is on attacking side
+  let leftShadowTriangle = null;
+  let rightShadowTriangle = null;
+  
+  if (ballPosition.z > 0) {
+    // Left antenna shadow
+    if (ballPosition.x < -antennaX) {
+      const dx = -antennaX - ballPosition.x;
+      const dz = 0 - ballPosition.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      
+      if (dist > MIN_SHADOW_DISTANCE_THRESHOLD) {
+        const dirX = dx / dist;
+        const dirZ = dz / dist;
+        const endX = -antennaX + dirX * ANTENNA_SHADOW_DEPTH;
+        const endZ = 0 + dirZ * ANTENNA_SHADOW_DEPTH;
+        const clampedEndZ = Math.max(endZ, -COURT.halfLength);
+        
+        leftShadowTriangle = {
+          v1x: -antennaX, v1z: 0,
+          v2x: -antennaX, v2z: clampedEndZ,
+          v3x: endX, v3z: clampedEndZ
+        };
+      }
+    }
+    
+    // Right antenna shadow
+    if (ballPosition.x > antennaX) {
+      const dx = antennaX - ballPosition.x;
+      const dz = 0 - ballPosition.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      
+      if (dist > MIN_SHADOW_DISTANCE_THRESHOLD) {
+        const dirX = dx / dist;
+        const dirZ = dz / dist;
+        const endX = antennaX + dirX * ANTENNA_SHADOW_DEPTH;
+        const endZ = 0 + dirZ * ANTENNA_SHADOW_DEPTH;
+        const clampedEndZ = Math.max(endZ, -COURT.halfLength);
+        
+        rightShadowTriangle = {
+          v1x: antennaX, v1z: 0,
+          v2x: antennaX, v2z: clampedEndZ,
+          v3x: endX, v3z: clampedEndZ
+        };
+      }
+    }
+  }
 
   for (let i = 1; i <= samples; i++) {
     const t = i / samples;
@@ -1589,17 +1637,21 @@ function updateAttackIndicator() {
     }
     
     // 1b. Antenna Shadow Collision (check if trajectory point falls within antenna shadow wedges)
-    // Only check points in opponent's court (z < 0)
+    // Only check points in opponent's court (z < 0) and only if shadows exist
     if (p.z < 0) {
-      // Check LEFT antenna shadow (side = -1)
-      if (checkAntennaShadowCollision(p, ballPosition, antennaX, -1)) {
+      if (leftShadowTriangle && isPointInTriangle(p.x, p.z, 
+          leftShadowTriangle.v1x, leftShadowTriangle.v1z,
+          leftShadowTriangle.v2x, leftShadowTriangle.v2z,
+          leftShadowTriangle.v3x, leftShadowTriangle.v3z)) {
         collisionT = t;
         collisionType = "antenna";
         break;
       }
       
-      // Check RIGHT antenna shadow (side = 1)
-      if (checkAntennaShadowCollision(p, ballPosition, antennaX, 1)) {
+      if (rightShadowTriangle && isPointInTriangle(p.x, p.z,
+          rightShadowTriangle.v1x, rightShadowTriangle.v1z,
+          rightShadowTriangle.v2x, rightShadowTriangle.v2z,
+          rightShadowTriangle.v3x, rightShadowTriangle.v3z)) {
         collisionT = t;
         collisionType = "antenna";
         break;
@@ -1961,74 +2013,25 @@ function isPointInTriangle(px, pz, v1x, v1z, v2x, v2z, v3x, v3z) {
   return a >= 0 && b >= 0 && c >= 0;
 }
 
-/**
- * Checks if a trajectory point falls within an antenna shadow wedge.
- * @param {THREE.Vector3} trajectoryPoint - Point along the ball's trajectory to test
- * @param {THREE.Vector3} ballPosition - Current position of the ball
- * @param {number} antennaX - Distance from court center to antenna (always positive)
- * @param {number} side - Which antenna: -1 for left, 1 for right
- * @returns {boolean} True if the trajectory point is in the shadow zone
- */
-function checkAntennaShadowCollision(trajectoryPoint, ballPosition, antennaX, side) {
-  const signedAntennaX = side * antennaX;
-  
-  // Check if ball is on attacking side and beyond the antenna
-  // Left antenna (side=-1): ball must be LEFT of left antenna (ball.x < -antennaX)
-  // Right antenna (side=1): ball must be RIGHT of right antenna (ball.x > antennaX)
-  if (ballPosition.z <= 0) {
-    return false;
-  }
-  
-  if (side === -1 && ballPosition.x >= signedAntennaX) {
-    return false; // Left antenna: ball not far enough left
-  }
-  if (side === 1 && ballPosition.x <= signedAntennaX) {
-    return false; // Right antenna: ball not far enough right
-  }
-  
-  const dx = signedAntennaX - ballPosition.x;
-  const dz = 0 - ballPosition.z;
-  const dist = Math.sqrt(dx * dx + dz * dz);
-  
-  if (dist <= MIN_SHADOW_DISTANCE_THRESHOLD) {
-    return false;
-  }
-  
-  const dirX = dx / dist;
-  const dirZ = dz / dist;
-  const endX = signedAntennaX + dirX * ANTENNA_SHADOW_DEPTH;
-  const endZ = 0 + dirZ * ANTENNA_SHADOW_DEPTH;
-  const clampedEndZ = Math.max(endZ, -COURT.halfLength);
-  
-  // Check if trajectory point is inside the shadow triangle
-  // Triangle vertices: (signedAntennaX, 0), (signedAntennaX, clampedEndZ), (endX, clampedEndZ)
-  return isPointInTriangle(
-    trajectoryPoint.x, trajectoryPoint.z,
-    signedAntennaX, 0,
-    signedAntennaX, clampedEndZ,
-    endX, clampedEndZ
-  );
-}
-
 function updateAntennaShadows() {
-  const b = ball.position;
+  const ballPosition = ball.position;
   const antennaX = COURT.halfWidth; // Position of antennas at court edges
 
   // Calculate shadows for both left and right antennas
   // These shadows show areas that can't be reached because the ball would pass outside the antenna
 
   // LEFT ANTENNA SHADOW (shows unreachable area when ball would pass outside left antenna)
-  if (b.z < 0) {
+  if (ballPosition.z < 0) {
     // Ball is on defending side - no shadow needed
     leftAntennaShadow.geometry.dispose();
     leftAntennaShadow.geometry = new THREE.BufferGeometry();
   } else {
     // Project shadow from ball through left antenna position
-    const dx = -antennaX - b.x;
-    const dz = 0 - b.z;
+    const dx = -antennaX - ballPosition.x;
+    const dz = 0 - ballPosition.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && b.x < -antennaX) {
+    if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && ballPosition.x < -antennaX) {
       // Ball is to the left of the left antenna - shadow shows unreachable right side
       const dirX = dx / dist;
       const dirZ = dz / dist;
@@ -2064,17 +2067,17 @@ function updateAntennaShadows() {
   }
 
   // RIGHT ANTENNA SHADOW (shows unreachable area when ball would pass outside right antenna)
-  if (b.z < 0) {
+  if (ballPosition.z < 0) {
     // Ball is on defending side - no shadow needed
     rightAntennaShadow.geometry.dispose();
     rightAntennaShadow.geometry = new THREE.BufferGeometry();
   } else {
     // Project shadow from ball through right antenna position
-    const dx = antennaX - b.x;
-    const dz = 0 - b.z;
+    const dx = antennaX - ballPosition.x;
+    const dz = 0 - ballPosition.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && b.x > antennaX) {
+    if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && ballPosition.x > antennaX) {
       // Ball is to the right of the right antenna - shadow shows unreachable left side
       const dirX = dx / dist;
       const dirZ = dz / dist;
