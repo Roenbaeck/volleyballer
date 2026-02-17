@@ -1550,8 +1550,7 @@ function updateAttackIndicator() {
   const samples = 80;
   const activeBlockers = players.filter(p => p.userData.isBlocker);
   
-  // Pre-compute values for antenna shadow collision detection
-  const ballPos = ball.position.clone();
+  // Pre-compute antenna position for shadow collision detection
   const antennaX = COURT.halfWidth;
 
   for (let i = 1; i <= samples; i++) {
@@ -1592,14 +1591,14 @@ function updateAttackIndicator() {
     // Only check points in opponent's court (z < 0)
     if (p.z < 0) {
       // Check LEFT antenna shadow (side = -1)
-      if (checkAntennaShadowCollision(p, ballPos, antennaX, -1)) {
+      if (checkAntennaShadowCollision(p, ball.position, antennaX, -1)) {
         collisionT = t;
         collisionType = "antenna";
         break;
       }
       
       // Check RIGHT antenna shadow (side = 1)
-      if (checkAntennaShadowCollision(p, ballPos, antennaX, 1)) {
+      if (checkAntennaShadowCollision(p, ball.position, antennaX, 1)) {
         collisionT = t;
         collisionType = "antenna";
         break;
@@ -1935,11 +1934,24 @@ function updateNetShadow() {
   netShadow.geometry = geometry;
 }
 
-// Helper function to check if a 2D point (x, z) is inside a triangle defined by three vertices
+/**
+ * Checks if a 2D point lies inside a triangle using barycentric coordinates.
+ * Uses an inclusive test (points on the boundary are considered inside).
+ * @param {number} px - X coordinate of the point to test
+ * @param {number} pz - Z coordinate of the point to test  
+ * @param {number} v1x - X coordinate of triangle vertex 1
+ * @param {number} v1z - Z coordinate of triangle vertex 1
+ * @param {number} v2x - X coordinate of triangle vertex 2
+ * @param {number} v2z - Z coordinate of triangle vertex 2
+ * @param {number} v3x - X coordinate of triangle vertex 3
+ * @param {number} v3z - Z coordinate of triangle vertex 3
+ * @returns {boolean} True if point is inside or on the triangle boundary
+ */
 function isPointInTriangle(px, pz, v1x, v1z, v2x, v2z, v3x, v3z) {
-  // Using barycentric coordinates
+  // Using barycentric coordinates: a point P is inside triangle ABC if
+  // all three barycentric coordinates (a, b, c) are non-negative and sum to 1
   const denom = (v2z - v3z) * (v1x - v3x) + (v3x - v2x) * (v1z - v3z);
-  if (Math.abs(denom) < TRIANGLE_EPSILON) return false;
+  if (Math.abs(denom) < TRIANGLE_EPSILON) return false; // Degenerate triangle
   
   const a = ((v2z - v3z) * (px - v3x) + (v3x - v2x) * (pz - v3z)) / denom;
   const b = ((v3z - v1z) * (px - v3x) + (v1x - v3x) * (pz - v3z)) / denom;
@@ -1948,18 +1960,24 @@ function isPointInTriangle(px, pz, v1x, v1z, v2x, v2z, v3x, v3z) {
   return a >= 0 && b >= 0 && c >= 0;
 }
 
-// Helper function to check antenna shadow collision for a given side
-function checkAntennaShadowCollision(p, b, antennaX, side) {
-  // side: -1 for left antenna, 1 for right antenna
+/**
+ * Checks if a trajectory point falls within an antenna shadow wedge.
+ * @param {THREE.Vector3} trajectoryPoint - Point along the ball's trajectory to test
+ * @param {THREE.Vector3} ballPosition - Current position of the ball
+ * @param {number} antennaX - Distance from court center to antenna (always positive)
+ * @param {number} side - Which antenna: -1 for left, 1 for right
+ * @returns {boolean} True if the trajectory point is in the shadow zone
+ */
+function checkAntennaShadowCollision(trajectoryPoint, ballPosition, antennaX, side) {
   const signedAntennaX = side * antennaX;
   
   // Check if ball is on attacking side and beyond the antenna
-  if (b.z <= 0 || side * b.x <= signedAntennaX) {
+  if (ballPosition.z <= 0 || side * ballPosition.x <= signedAntennaX) {
     return false;
   }
   
-  const dx = signedAntennaX - b.x;
-  const dz = 0 - b.z;
+  const dx = signedAntennaX - ballPosition.x;
+  const dz = 0 - ballPosition.z;
   const dist = Math.sqrt(dx * dx + dz * dz);
   
   if (dist <= MIN_SHADOW_DISTANCE_THRESHOLD) {
@@ -1972,9 +1990,14 @@ function checkAntennaShadowCollision(p, b, antennaX, side) {
   const endZ = 0 + dirZ * ANTENNA_SHADOW_DEPTH;
   const clampedEndZ = Math.max(endZ, -COURT.halfLength);
   
-  // Check if point p is inside the shadow triangle
+  // Check if trajectory point is inside the shadow triangle
   // Triangle vertices: (signedAntennaX, 0), (signedAntennaX, clampedEndZ), (endX, clampedEndZ)
-  return isPointInTriangle(p.x, p.z, signedAntennaX, 0, signedAntennaX, clampedEndZ, endX, clampedEndZ);
+  return isPointInTriangle(
+    trajectoryPoint.x, trajectoryPoint.z,
+    signedAntennaX, 0,
+    signedAntennaX, clampedEndZ,
+    endX, clampedEndZ
+  );
 }
 
 function updateAntennaShadows() {
