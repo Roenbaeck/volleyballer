@@ -480,15 +480,42 @@ netBottomTape.position.z = 0;
 netBottomTape.castShadow = true;
 scene.add(netBottomTape);
 
-// Antennas
-const antennaGeo = new THREE.CylinderGeometry(0.015, 0.015, 1.8, 8);
-const antennaMat = new THREE.MeshStandardMaterial({ color: 0xff4444, roughness: 0.5 }); // Red but we'll add white stripes later if needed
+// Antennas (with red and white stripes texture)
+const antennaTexture = (() => {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+
+  // Create alternating red and white horizontal stripes (10cm each in real volleyball)
+  const stripeHeight = size / 18; // 18 stripes for 1.8m antenna (10cm each)
+  for (let i = 0; i < 18; i++) {
+    ctx.fillStyle = i % 2 === 0 ? "#ff0000" : "#ffffff";
+    ctx.fillRect(0, i * stripeHeight, size, stripeHeight);
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  return texture;
+})();
+
+const antennaGeo = new THREE.CylinderGeometry(0.025, 0.025, 1.8, 12);
+const antennaMat = new THREE.MeshStandardMaterial({
+  map: antennaTexture,
+  roughness: 0.4,
+  metalness: 0.1
+});
 const leftAntenna = new THREE.Mesh(antennaGeo, antennaMat);
-leftAntenna.position.set(-COURT.halfWidth, 2.43 - 1.0 + 0.9, 0); // Bottom of net is ~1.43, top is 2.43. Antenna is 1.8m tall.
+leftAntenna.position.set(-COURT.halfWidth, 2.43 - 1.0 + 0.9, 0);
+leftAntenna.castShadow = true;
 scene.add(leftAntenna);
 
-const rightAntenna = new THREE.Mesh(antennaGeo, antennaMat);
+const rightAntenna = new THREE.Mesh(antennaGeo, antennaMat.clone());
 rightAntenna.position.set(COURT.halfWidth, 2.43 - 1.0 + 0.9, 0);
+rightAntenna.castShadow = true;
 scene.add(rightAntenna);
 
 function updateNetHeightVisuals() {
@@ -500,6 +527,7 @@ function updateNetHeightVisuals() {
   rightAntenna.position.y = h - 1.0 + 0.9;
 
   updateNetShadow();
+  updateAntennaShadows();
   updateBlockShadow();
 }
 
@@ -1302,6 +1330,22 @@ const netShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), netShadowMat);
 netShadow.renderOrder = -1;
 scene.add(netShadow);
 
+// Antenna shadows (show unreachable areas based on antenna positioning)
+const antennaShadowMat = new THREE.MeshBasicMaterial({
+  color: 0xff0000,
+  transparent: true,
+  opacity: 0.35,
+  side: THREE.DoubleSide,
+  depthWrite: false
+});
+const leftAntennaShadow = new THREE.Mesh(new THREE.BufferGeometry(), antennaShadowMat);
+leftAntennaShadow.renderOrder = -1;
+scene.add(leftAntennaShadow);
+
+const rightAntennaShadow = new THREE.Mesh(new THREE.BufferGeometry(), antennaShadowMat);
+rightAntennaShadow.renderOrder = -1;
+scene.add(rightAntennaShadow);
+
 // Attack indicator (arced tube)
 const attackLineMat = new THREE.MeshBasicMaterial({ color: 0x8b00ff });
 let attackLine = new THREE.Mesh(new THREE.BufferGeometry(), attackLineMat);
@@ -1514,10 +1558,25 @@ function updateAttackIndicator() {
       const tNet = (prevP.z) / (prevP.z - p.z);
       const lerpT = ((i - 1) / samples) + (tNet / samples);
       const pNet = curve.getPoint(lerpT);
-      
+
       if (pNet.y <= hNet && Math.abs(pNet.x) <= COURT.halfWidth + 0.5) {
         collisionT = lerpT;
         collisionType = "net";
+        break;
+      }
+    }
+
+    // 1a. Antenna Collision (check if ball crosses net plane outside antenna boundaries)
+    if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
+      // Find exact t where z=0 (crossing net plane)
+      const tNet = (prevP.z) / (prevP.z - p.z);
+      const lerpT = ((i - 1) / samples) + (tNet / samples);
+      const pNet = curve.getPoint(lerpT);
+
+      // Check if crossing happens outside the antenna boundaries (COURT.halfWidth)
+      if (Math.abs(pNet.x) > COURT.halfWidth) {
+        collisionT = lerpT;
+        collisionType = "antenna";
         break;
       }
     }
@@ -1851,6 +1910,107 @@ function updateNetShadow() {
   netShadow.geometry = geometry;
 }
 
+function updateAntennaShadows() {
+  const b = ball.position.clone();
+  const antennaX = COURT.halfWidth; // Position of antennas at court edges
+  const depth = 20; // How far the shadow extends into the court
+
+  // Calculate shadows for both left and right antennas
+  // These shadows show areas that can't be reached because the ball would pass outside the antenna
+
+  // LEFT ANTENNA SHADOW (for balls on the left side)
+  if (b.x < -antennaX || b.z < 0) {
+    // Ball is beyond left antenna or on defending side - no left shadow needed
+    leftAntennaShadow.geometry.dispose();
+    leftAntennaShadow.geometry = new THREE.BufferGeometry();
+  } else {
+    // Project shadow from ball through left antenna position
+    const dx = -antennaX - b.x;
+    const dz = 0 - b.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist > 0.01) {
+      const dirX = dx / dist;
+      const dirZ = dz / dist;
+
+      // Shadow extends from left antenna into opponent's court
+      const shadowDepth = depth;
+      const endX = -antennaX + dirX * shadowDepth;
+      const endZ = 0 + dirZ * shadowDepth;
+
+      // Create a wedge showing the blocked area
+      // The wedge goes from the court edge through the antenna position
+      const leftEdge = -COURT.halfWidth - 2; // Left court boundary (extended)
+
+      const leftPositions = [
+        -antennaX, 0.008, 0,  // Antenna position at net
+        leftEdge, 0.008, 0,   // Left edge at net
+        leftEdge, 0.008, endZ, // Left edge extended back
+        endX, 0.008, endZ     // Shadow end point
+      ];
+
+      const positions = new Float32Array(leftPositions);
+      const indices = [0, 1, 2, 0, 2, 3];
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      leftAntennaShadow.geometry.dispose();
+      leftAntennaShadow.geometry = geometry;
+    } else {
+      leftAntennaShadow.geometry.dispose();
+      leftAntennaShadow.geometry = new THREE.BufferGeometry();
+    }
+  }
+
+  // RIGHT ANTENNA SHADOW (for balls on the right side)
+  if (b.x > antennaX || b.z < 0) {
+    // Ball is beyond right antenna or on defending side - no right shadow needed
+    rightAntennaShadow.geometry.dispose();
+    rightAntennaShadow.geometry = new THREE.BufferGeometry();
+  } else {
+    // Project shadow from ball through right antenna position
+    const dx = antennaX - b.x;
+    const dz = 0 - b.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist > 0.01) {
+      const dirX = dx / dist;
+      const dirZ = dz / dist;
+
+      // Shadow extends from right antenna into opponent's court
+      const shadowDepth = depth;
+      const endX = antennaX + dirX * shadowDepth;
+      const endZ = 0 + dirZ * shadowDepth;
+
+      // Create a wedge showing the blocked area
+      const rightEdge = COURT.halfWidth + 2; // Right court boundary (extended)
+
+      const rightPositions = [
+        antennaX, 0.008, 0,   // Antenna position at net
+        rightEdge, 0.008, 0,  // Right edge at net
+        rightEdge, 0.008, endZ, // Right edge extended back
+        endX, 0.008, endZ     // Shadow end point
+      ];
+
+      const positions = new Float32Array(rightPositions);
+      const indices = [0, 1, 2, 0, 2, 3];
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      rightAntennaShadow.geometry.dispose();
+      rightAntennaShadow.geometry = geometry;
+    } else {
+      rightAntennaShadow.geometry.dispose();
+      rightAntennaShadow.geometry = new THREE.BufferGeometry();
+    }
+  }
+}
+
+
 // Dragging (custom ground-plane drag)
 const draggable = [...allPlayers, attackTarget];
 let activeDrag = null;
@@ -1937,6 +2097,7 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     updateAttackIndicator();
     updateBlockShadow();
     updateNetShadow();
+    updateAntennaShadows();
     return;
   }
 
@@ -2130,6 +2291,7 @@ ui.contactHeight.addEventListener("input", (e) => {
   updatePlayerRotations();
   updateBlockShadow();
   updateNetShadow();
+  updateAntennaShadows();
   saveLastKnown();
 });
 
@@ -2144,6 +2306,7 @@ ui.attackPower.addEventListener("input", (e) => {
 
   updateAttackIndicator();
   updateNetShadow();
+  updateAntennaShadows();
   saveLastKnown();
 });
 
@@ -2229,6 +2392,7 @@ ui.rotateTeam.addEventListener("click", () => {
   updatePlayerRotations();
   updateBlockShadow();
   updateNetShadow();
+  updateAntennaShadows();
   saveLastKnown();
 });
 
@@ -2283,6 +2447,7 @@ function applyTacticalState(data) {
 
   updateBlockShadow();
   updateNetShadow();
+  updateAntennaShadows();
   updatePlayerRotations();
   updateAttackIndicator();
   saveLastKnown();
@@ -2462,6 +2627,7 @@ function animate() {
   updateAttackIndicator();
   updateBlockShadow();
   updateNetShadow();
+  updateAntennaShadows();
 
   composer.render();
 }
