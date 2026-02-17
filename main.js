@@ -1550,7 +1550,8 @@ function updateAttackIndicator() {
   const samples = 80;
   const activeBlockers = players.filter(p => p.userData.isBlocker);
   
-  // Pre-compute antenna position for shadow collision detection
+  // Pre-compute values for shadow collision detection
+  const ballPosition = ball.position;
   const antennaX = COURT.halfWidth;
 
   for (let i = 1; i <= samples; i++) {
@@ -1591,14 +1592,14 @@ function updateAttackIndicator() {
     // Only check points in opponent's court (z < 0)
     if (p.z < 0) {
       // Check LEFT antenna shadow (side = -1)
-      if (checkAntennaShadowCollision(p, ball.position, antennaX, -1)) {
+      if (checkAntennaShadowCollision(p, ballPosition, antennaX, -1)) {
         collisionT = t;
         collisionType = "antenna";
         break;
       }
       
       // Check RIGHT antenna shadow (side = 1)
-      if (checkAntennaShadowCollision(p, ball.position, antennaX, 1)) {
+      if (checkAntennaShadowCollision(p, ballPosition, antennaX, 1)) {
         collisionT = t;
         collisionType = "antenna";
         break;
@@ -2001,7 +2002,7 @@ function checkAntennaShadowCollision(trajectoryPoint, ballPosition, antennaX, si
 }
 
 function updateAntennaShadows() {
-  const b = ball.position.clone();
+  const b = ball.position;
   const antennaX = COURT.halfWidth; // Position of antennas at court edges
 
   // Calculate shadows for both left and right antennas
