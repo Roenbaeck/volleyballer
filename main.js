@@ -1541,95 +1541,99 @@ function updateAttackIndicator() {
   const control = new THREE.Vector3(midX, arcHeight + 0.2, midZ);
   const curve = new THREE.QuadraticBezierCurve3(start, control, end);
 
+  const targetInsideAntennaShadow = isPointInAntennaShadow(end, start);
+
   // --- Collision Detection ---
   let collisionT = 1.0;
-  let collisionType = "none";
+  let collisionType = targetInsideAntennaShadow ? "antenna" : "none";
   const samples = 80;
   const activeBlockers = players.filter(p => p.userData.isBlocker);
 
-  for (let i = 1; i <= samples; i++) {
-    const t = i / samples;
-    const p = curve.getPoint(t);
+  if (collisionType === "none") {
+    for (let i = 1; i <= samples; i++) {
+      const t = i / samples;
+      const p = curve.getPoint(t);
 
-    // 1. Net Collision (plane at z=0, from y=0 to y=hNet, within court width)
-    const prevP = curve.getPoint((i - 1) / samples);
-    if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
-      // Find exact t where z=0
-      const tNet = (prevP.z) / (prevP.z - p.z);
-      const lerpT = ((i - 1) / samples) + (tNet / samples);
-      const pNet = curve.getPoint(lerpT);
+      // 1. Net Collision (plane at z=0, from y=0 to y=hNet, within court width)
+      const prevP = curve.getPoint((i - 1) / samples);
+      if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
+        // Find exact t where z=0
+        const tNet = (prevP.z) / (prevP.z - p.z);
+        const lerpT = ((i - 1) / samples) + (tNet / samples);
+        const pNet = curve.getPoint(lerpT);
 
-      if (pNet.y <= hNet && Math.abs(pNet.x) <= COURT.halfWidth + 0.5) {
-        collisionT = lerpT;
-        collisionType = "net";
-        break;
-      }
-    }
-
-    // 1a. Antenna Collision (check if ball crosses net plane outside antenna boundaries)
-    if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
-      // Find exact t where z=0 (crossing net plane)
-      const tNet = (prevP.z) / (prevP.z - p.z);
-      const lerpT = ((i - 1) / samples) + (tNet / samples);
-      const pNet = curve.getPoint(lerpT);
-
-      // Check if crossing happens outside the antenna boundaries (COURT.halfWidth)
-      if (Math.abs(pNet.x) > COURT.halfWidth) {
-        collisionT = lerpT;
-        collisionType = "antenna";
-        break;
-      }
-    }
-
-    // 2. Blocker Collision (Individual and Tight Blocks)
-    for (let j = 0; j < activeBlockers.length; j++) {
-      const bA = activeBlockers[j];
-      const bAPos = bA.position;
-      const bAH = bA.userData.height || 1.9;
-      const bAJump = bA.userData.jump || 3.10;
-      const radA = bAH * BLOCKER_RADIUS_FACTOR;
-
-      // Individual check
-      const dx = p.x - bAPos.x;
-      const dz = p.z - bAPos.z;
-      if ((dx * dx + dz * dz) < radA * radA && p.y <= bAJump) {
-        collisionT = t;
-        collisionType = "block";
-        break;
+        if (pNet.y <= hNet && Math.abs(pNet.x) <= COURT.halfWidth + 0.5) {
+          collisionT = lerpT;
+          collisionType = "net";
+          break;
+        }
       }
 
-      // "Tight Block" check with other blockers
-      for (let k = j + 1; k < activeBlockers.length; k++) {
-        const bB = activeBlockers[k];
-        const bBPos = bB.position;
-        const bBJump = bB.userData.jump || 3.10;
-        
-        const distAB = bAPos.distanceTo(bBPos);
-        if (distAB < BLOCK_THRESHOLD) { // Threshold for "tight" block
-          // Check distance of point p to segment AB
-          const v = new THREE.Vector3().subVectors(bBPos, bAPos);
-          const w = new THREE.Vector3().subVectors(p, bAPos);
-          v.y = 0; w.y = 0; // Project to floor for proximity check
-          
-          const c1 = w.dot(v);
-          if (c1 <= 0) continue;
-          const c2 = v.dot(v);
-          if (c2 <= c1) continue;
-          
-          const b = c1 / c2;
-          const pb = bAPos.clone().add(v.clone().multiplyScalar(b));
-          const distToSegmentSq = (p.x - pb.x) * (p.x - pb.x) + (p.z - pb.z) * (p.z - pb.z);
-          
-          if (distToSegmentSq < (radA * radA) && p.y <= Math.max(bAJump, bBJump)) {
-            collisionT = t;
-            collisionType = "block";
-            break;
+      // 1a. Antenna Collision (check if ball crosses net plane outside antenna boundaries)
+      if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
+        // Find exact t where z=0 (crossing net plane)
+        const tNet = (prevP.z) / (prevP.z - p.z);
+        const lerpT = ((i - 1) / samples) + (tNet / samples);
+        const pNet = curve.getPoint(lerpT);
+
+        // Check if crossing happens outside the antenna boundaries (COURT.halfWidth)
+        if (Math.abs(pNet.x) > COURT.halfWidth) {
+          collisionT = lerpT;
+          collisionType = "antenna";
+          break;
+        }
+      }
+
+      // 2. Blocker Collision (Individual and Tight Blocks)
+      for (let j = 0; j < activeBlockers.length; j++) {
+        const bA = activeBlockers[j];
+        const bAPos = bA.position;
+        const bAH = bA.userData.height || 1.9;
+        const bAJump = bA.userData.jump || 3.10;
+        const radA = bAH * BLOCKER_RADIUS_FACTOR;
+
+        // Individual check
+        const dx = p.x - bAPos.x;
+        const dz = p.z - bAPos.z;
+        if ((dx * dx + dz * dz) < radA * radA && p.y <= bAJump) {
+          collisionT = t;
+          collisionType = "block";
+          break;
+        }
+
+        // "Tight Block" check with other blockers
+        for (let k = j + 1; k < activeBlockers.length; k++) {
+          const bB = activeBlockers[k];
+          const bBPos = bB.position;
+          const bBJump = bB.userData.jump || 3.10;
+
+          const distAB = bAPos.distanceTo(bBPos);
+          if (distAB < BLOCK_THRESHOLD) { // Threshold for "tight" block
+            // Check distance of point p to segment AB
+            const v = new THREE.Vector3().subVectors(bBPos, bAPos);
+            const w = new THREE.Vector3().subVectors(p, bAPos);
+            v.y = 0; w.y = 0; // Project to floor for proximity check
+
+            const c1 = w.dot(v);
+            if (c1 <= 0) continue;
+            const c2 = v.dot(v);
+            if (c2 <= c1) continue;
+
+            const b = c1 / c2;
+            const pb = bAPos.clone().add(v.clone().multiplyScalar(b));
+            const distToSegmentSq = (p.x - pb.x) * (p.x - pb.x) + (p.z - pb.z) * (p.z - pb.z);
+
+            if (distToSegmentSq < (radA * radA) && p.y <= Math.max(bAJump, bBJump)) {
+              collisionT = t;
+              collisionType = "block";
+              break;
+            }
           }
         }
+        if (collisionType !== "none") break;
       }
       if (collisionType !== "none") break;
     }
-    if (collisionType !== "none") break;
   }
 
   // Update visual appearance
@@ -1911,104 +1915,115 @@ function updateNetShadow() {
 }
 
 function updateAntennaShadows() {
-  const b = ball.position.clone();
-  const antennaX = COURT.halfWidth; // Position of antennas at court edges
-  const depth = 20; // How far the shadow extends into the court
+  const antennaTriangles = getAntennaShadowTriangles(ball.position);
 
-  // Calculate shadows for both left and right antennas
-  // These shadows show areas that can't be reached because the ball would pass outside the antenna
+  applyAntennaShadowGeometry(leftAntennaShadow, antennaTriangles.left);
+  applyAntennaShadowGeometry(rightAntennaShadow, antennaTriangles.right);
+}
 
-  // LEFT ANTENNA SHADOW (shows unreachable area when ball would pass outside left antenna)
+function getAntennaShadowTriangles(ballPosition) {
+  const b = ballPosition.clone();
+  const antennaX = COURT.halfWidth;
+  const depth = 20;
+
   if (b.z < 0) {
-    // Ball is on defending side - no shadow needed
-    leftAntennaShadow.geometry.dispose();
-    leftAntennaShadow.geometry = new THREE.BufferGeometry();
-  } else {
-    // Project shadow from ball through left antenna position
-    const dx = -antennaX - b.x;
-    const dz = 0 - b.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
-
-    if (dist > 0.01 && b.x < -antennaX) {
-      // Ball is to the left of the left antenna - shadow shows unreachable right side
-      const dirX = dx / dist;
-      const dirZ = dz / dist;
-
-      // Shadow extends from left antenna into opponent's court
-      const shadowDepth = depth;
-      const endX = -antennaX + dirX * shadowDepth;
-      const endZ = 0 + dirZ * shadowDepth;
-
-      // Clamp endZ to stay within reasonable bounds
-      const clampedEndZ = Math.max(endZ, -COURT.halfLength);
-
-      // Create a triangular wedge from antenna position
-      const leftPositions = [
-        -antennaX, 0.008, 0,  // Antenna position at net
-        -antennaX, 0.008, clampedEndZ,  // Straight back from antenna
-        endX, 0.008, clampedEndZ     // Shadow end point
-      ];
-
-      const positions = new Float32Array(leftPositions);
-      const indices = [0, 1, 2];
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      geometry.setIndex(indices);
-      geometry.computeVertexNormals();
-      leftAntennaShadow.geometry.dispose();
-      leftAntennaShadow.geometry = geometry;
-    } else {
-      leftAntennaShadow.geometry.dispose();
-      leftAntennaShadow.geometry = new THREE.BufferGeometry();
-    }
+    return { left: null, right: null };
   }
 
-  // RIGHT ANTENNA SHADOW (shows unreachable area when ball would pass outside right antenna)
-  if (b.z < 0) {
-    // Ball is on defending side - no shadow needed
-    rightAntennaShadow.geometry.dispose();
-    rightAntennaShadow.geometry = new THREE.BufferGeometry();
-  } else {
-    // Project shadow from ball through right antenna position
-    const dx = antennaX - b.x;
-    const dz = 0 - b.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
+  const buildTriangle = (isLeft) => {
+    const sideX = isLeft ? -antennaX : antennaX;
+    const isOutside = isLeft ? (b.x < -antennaX) : (b.x > antennaX);
 
-    if (dist > 0.01 && b.x > antennaX) {
-      // Ball is to the right of the right antenna - shadow shows unreachable left side
-      const dirX = dx / dist;
-      const dirZ = dz / dist;
-
-      // Shadow extends from right antenna into opponent's court
-      const shadowDepth = depth;
-      const endX = antennaX + dirX * shadowDepth;
-      const endZ = 0 + dirZ * shadowDepth;
-
-      // Clamp endZ to stay within reasonable bounds
-      const clampedEndZ = Math.max(endZ, -COURT.halfLength);
-
-      // Create a triangular wedge from antenna position
-      const rightPositions = [
-        antennaX, 0.008, 0,   // Antenna position at net
-        antennaX, 0.008, clampedEndZ,  // Straight back from antenna
-        endX, 0.008, clampedEndZ     // Shadow end point
-      ];
-
-      const positions = new Float32Array(rightPositions);
-      const indices = [0, 1, 2];
-
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-      geometry.setIndex(indices);
-      geometry.computeVertexNormals();
-      rightAntennaShadow.geometry.dispose();
-      rightAntennaShadow.geometry = geometry;
-    } else {
-      rightAntennaShadow.geometry.dispose();
-      rightAntennaShadow.geometry = new THREE.BufferGeometry();
+    if (!isOutside) {
+      return null;
     }
+
+    const dx = sideX - b.x;
+    const dz = -b.z;
+    const dist = Math.hypot(dx, dz);
+
+    if (dist <= 0.01) {
+      return null;
+    }
+
+    const dirX = dx / dist;
+    const dirZ = dz / dist;
+    const endX = sideX + dirX * depth;
+    const endZ = Math.max(dirZ * depth, -COURT.halfLength);
+
+    return [
+      new THREE.Vector3(sideX, 0.008, 0),
+      new THREE.Vector3(sideX, 0.008, endZ),
+      new THREE.Vector3(endX, 0.008, endZ)
+    ];
+  };
+
+  return {
+    left: buildTriangle(true),
+    right: buildTriangle(false)
+  };
+}
+
+function applyAntennaShadowGeometry(shadowMesh, triangle) {
+  if (!triangle) {
+    shadowMesh.geometry.dispose();
+    shadowMesh.geometry = new THREE.BufferGeometry();
+    return;
   }
+
+  const [a, b, c] = triangle;
+  const positions = new Float32Array([
+    a.x, a.y, a.z,
+    b.x, b.y, b.z,
+    c.x, c.y, c.z
+  ]);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex([0, 1, 2]);
+  geometry.computeVertexNormals();
+
+  shadowMesh.geometry.dispose();
+  shadowMesh.geometry = geometry;
+}
+
+function isPointInAntennaShadow(point, ballPosition = ball.position) {
+  const antennaTriangles = getAntennaShadowTriangles(ballPosition);
+
+  return isPointInsideTriangleXZ(point, antennaTriangles.left) ||
+    isPointInsideTriangleXZ(point, antennaTriangles.right);
+}
+
+function isPointInsideTriangleXZ(point, triangle, epsilon = 1e-6) {
+  if (!triangle) {
+    return false;
+  }
+
+  const [a, b, c] = triangle;
+
+  const v0x = c.x - a.x;
+  const v0z = c.z - a.z;
+  const v1x = b.x - a.x;
+  const v1z = b.z - a.z;
+  const v2x = point.x - a.x;
+  const v2z = point.z - a.z;
+
+  const dot00 = v0x * v0x + v0z * v0z;
+  const dot01 = v0x * v1x + v0z * v1z;
+  const dot02 = v0x * v2x + v0z * v2z;
+  const dot11 = v1x * v1x + v1z * v1z;
+  const dot12 = v1x * v2x + v1z * v2z;
+
+  const denom = dot00 * dot11 - dot01 * dot01;
+  if (Math.abs(denom) < epsilon) {
+    return false;
+  }
+
+  const invDenom = 1 / denom;
+  const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+  const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+
+  return u >= -epsilon && v >= -epsilon && (u + v) <= 1 + epsilon;
 }
 
 
