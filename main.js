@@ -1562,7 +1562,7 @@ function updateAttackIndicator() {
     // Left antenna shadow
     if (ballPosition.x < -antennaX) {
       const dx = -antennaX - ballPosition.x;
-      const dz = 0 - ballPosition.z;
+      const dz = -ballPosition.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       
       if (dist > MIN_SHADOW_DISTANCE_THRESHOLD) {
@@ -1583,7 +1583,7 @@ function updateAttackIndicator() {
     // Right antenna shadow
     if (ballPosition.x > antennaX) {
       const dx = antennaX - ballPosition.x;
-      const dz = 0 - ballPosition.z;
+      const dz = -ballPosition.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       
       if (dist > MIN_SHADOW_DISTANCE_THRESHOLD) {
@@ -2004,7 +2004,9 @@ function isPointInTriangle(px, pz, v1x, v1z, v2x, v2z, v3x, v3z) {
   // Using barycentric coordinates: a point P is inside triangle ABC if
   // all three barycentric coordinates (a, b, c) are non-negative and sum to 1
   const denom = (v2z - v3z) * (v1x - v3x) + (v3x - v2x) * (v1z - v3z);
-  if (Math.abs(denom) < TRIANGLE_EPSILON) return false; // Degenerate triangle
+  // Check for degenerate triangle (zero area or collinear vertices)
+  // Prevents division by zero and ensures numerical stability
+  if (Math.abs(denom) < TRIANGLE_EPSILON) return false;
   
   const a = ((v2z - v3z) * (px - v3x) + (v3x - v2x) * (pz - v3z)) / denom;
   const b = ((v3z - v1z) * (px - v3x) + (v1x - v3x) * (pz - v3z)) / denom;
@@ -2028,7 +2030,7 @@ function updateAntennaShadows() {
   } else {
     // Project shadow from ball through left antenna position
     const dx = -antennaX - ballPosition.x;
-    const dz = 0 - ballPosition.z;
+    const dz = -ballPosition.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
     if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && ballPosition.x < -antennaX) {
@@ -2074,7 +2076,7 @@ function updateAntennaShadows() {
   } else {
     // Project shadow from ball through right antenna position
     const dx = antennaX - ballPosition.x;
-    const dz = 0 - ballPosition.z;
+    const dz = -ballPosition.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
 
     if (dist > MIN_SHADOW_DISTANCE_THRESHOLD && ballPosition.x > antennaX) {
