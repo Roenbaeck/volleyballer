@@ -1566,7 +1566,7 @@ function updateAttackIndicator() {
       }
     }
 
-    // 1a. Antenna Collision (check if ball crosses net plane outside antenna boundaries)
+    // 1a. Antenna Collision (check if ball crosses net plane outside antenna boundaries OR falls in antenna shadow)
     if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
       // Find exact t where z=0 (crossing net plane)
       const tNet = (prevP.z) / (prevP.z - p.z);
@@ -1578,6 +1578,62 @@ function updateAttackIndicator() {
         collisionT = lerpT;
         collisionType = "antenna";
         break;
+      }
+    }
+    
+    // 1b. Antenna Shadow Collision (check if trajectory point falls within antenna shadow wedges)
+    // Only check points in opponent's court (z < 0)
+    if (p.z < 0) {
+      const b = ball.position.clone();
+      const antennaX = COURT.halfWidth;
+      const depth = 20; // Same depth as shadow rendering
+      
+      // Check LEFT antenna shadow
+      if (b.z > 0 && b.x < -antennaX) {
+        const dx = -antennaX - b.x;
+        const dz = 0 - b.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        
+        if (dist > 0.01) {
+          const dirX = dx / dist;
+          const dirZ = dz / dist;
+          const shadowDepth = depth;
+          const endX = -antennaX + dirX * shadowDepth;
+          const endZ = 0 + dirZ * shadowDepth;
+          const clampedEndZ = Math.max(endZ, -COURT.halfLength);
+          
+          // Check if point p is inside the shadow triangle
+          // Triangle vertices: (-antennaX, 0), (-antennaX, clampedEndZ), (endX, clampedEndZ)
+          if (isPointInTriangle(p.x, p.z, -antennaX, 0, -antennaX, clampedEndZ, endX, clampedEndZ)) {
+            collisionT = t;
+            collisionType = "antenna";
+            break;
+          }
+        }
+      }
+      
+      // Check RIGHT antenna shadow
+      if (b.z > 0 && b.x > antennaX) {
+        const dx = antennaX - b.x;
+        const dz = 0 - b.z;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        
+        if (dist > 0.01) {
+          const dirX = dx / dist;
+          const dirZ = dz / dist;
+          const shadowDepth = depth;
+          const endX = antennaX + dirX * shadowDepth;
+          const endZ = 0 + dirZ * shadowDepth;
+          const clampedEndZ = Math.max(endZ, -COURT.halfLength);
+          
+          // Check if point p is inside the shadow triangle
+          // Triangle vertices: (antennaX, 0), (antennaX, clampedEndZ), (endX, clampedEndZ)
+          if (isPointInTriangle(p.x, p.z, antennaX, 0, antennaX, clampedEndZ, endX, clampedEndZ)) {
+            collisionT = t;
+            collisionType = "antenna";
+            break;
+          }
+        }
       }
     }
 
@@ -1908,6 +1964,19 @@ function updateNetShadow() {
   geometry.computeVertexNormals();
   netShadow.geometry.dispose();
   netShadow.geometry = geometry;
+}
+
+// Helper function to check if a 2D point (x, z) is inside a triangle defined by three vertices
+function isPointInTriangle(px, pz, v1x, v1z, v2x, v2z, v3x, v3z) {
+  // Using barycentric coordinates
+  const denom = (v2z - v3z) * (v1x - v3x) + (v3x - v2x) * (v1z - v3z);
+  if (Math.abs(denom) < 0.0001) return false;
+  
+  const a = ((v2z - v3z) * (px - v3x) + (v3x - v2x) * (pz - v3z)) / denom;
+  const b = ((v3z - v1z) * (px - v3x) + (v1x - v3x) * (pz - v3z)) / denom;
+  const c = 1 - a - b;
+  
+  return a >= 0 && b >= 0 && c >= 0;
 }
 
 function updateAntennaShadows() {
