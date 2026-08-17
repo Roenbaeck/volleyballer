@@ -83,6 +83,8 @@
       align-items: center;
       justify-content: center;
       cursor: pointer;
+      padding: 0;
+      color: inherit;
       box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
 
@@ -168,6 +170,18 @@
       color: var(--accent);
     }
 
+    .pill[data-state="clear"] {
+      color: #8be59a;
+      border-color: rgba(91, 214, 114, 0.48);
+      background: rgba(91, 214, 114, 0.13);
+    }
+
+    .pill[data-state="blocked"] {
+      color: #ff8b92;
+      border-color: rgba(255, 91, 98, 0.52);
+      background: rgba(255, 91, 98, 0.14);
+    }
+
     /* Toggle Switch */
     .switch-container {
       display: flex;
@@ -188,6 +202,9 @@
       z-index: 1;
       transition: color 0.3s;
       color: rgba(230, 238, 247, 0.5);
+      background: transparent;
+      border: 0;
+      border-radius: 8px;
     }
 
     .switch-option.active {
@@ -362,9 +379,9 @@
 
 <body>
   <div id="app"></div>
-  <div id="menuToggle" title="Toggle Settings Menu">
+  <button id="menuToggle" type="button" title="Toggle Settings Menu" aria-label="Toggle settings menu" aria-expanded="true">
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-  </div>
+  </button>
   <script type="importmap">
     {
       "imports": {
@@ -379,9 +396,8 @@
 
     <div class="switch-container" id="modeSwitch">
       <div class="switch-slider"></div>
-      <div class="switch-option active" data-mode="drag" title="Move players and the ball around the court">Drag Players
-      </div>
-      <div class="switch-option" data-mode="paint" title="Draw coverage zones on the court floor">Paint Zones</div>
+      <button type="button" class="switch-option active" data-mode="drag" aria-pressed="true" title="Move players and the ball around the court">Drag Players</button>
+      <button type="button" class="switch-option" data-mode="paint" aria-pressed="false" title="Draw coverage zones on the court floor">Paint Zones</button>
     </div>
 
     <div class="control" title="Choose the color for your tactical zones">
@@ -426,6 +442,10 @@
             <option value="2.20">2.20m</option>
             <option value="2.16">2.16m</option>
           </select>
+        </div>
+        <div class="control" title="Shows whether the current trajectory reaches the selected target">
+          <label>Trajectory</label>
+          <span id="trajectoryStatus" class="pill" data-state="clear">Clear</span>
         </div>
       </div>
     </details>
@@ -498,18 +518,20 @@
     <div class="legend-item"><div class="dot" style="background:#43a047"></div>Defenders</div>
     <div class="legend-item"><div class="dot" style="background:#8b00ff"></div>Attacking ball</div>
   </div>
-  <div id="status">Tip: zoom with trackpad, shift-drag to orbit.</div>
-  <script type="module" src="./main.js"></script>
+  <div id="status">Tip: scroll or pinch to zoom; drag empty space to orbit.</div>
+  <script type="module" src="./main.js?v=20260817-fidelity11"></script>
   <script>
-    // Increment visitor counter
-    fetch('https://volleyballer.lars-ronnback.workers.dev/')
-      .then(response => response.json())
-      .then(data => {
-        console.log('Visit count:', data.count);
-        // Optionally display it somewhere:
-        // document.getElementById('visitor-count').textContent = data.count;
-      })
-      .catch(err => console.error('Counter failed:', err));
+    // Keep local development deterministic and treat analytics as optional.
+    if (!['localhost', '127.0.0.1', '::1'].includes(location.hostname)) {
+      fetch('https://volleyballer.lars-ronnback.workers.dev/')
+        .then(response => {
+          if (!response.ok) throw new Error(`Counter returned ${response.status}`);
+          return response.json();
+        })
+        .catch(() => {
+          // Analytics must never affect the tactics board or pollute the console.
+        });
+    }
   </script>
 </body>
 

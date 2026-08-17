@@ -6,6 +6,24 @@ import { UnrealBloomPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exam
 import { SMAAPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/SMAAPass.js";
 import { ShaderPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js";
 import { OutputPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/OutputPass.js";
+import { GTAOPass } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/GTAOPass.js";
+import { RoomEnvironment } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/environments/RoomEnvironment.js";
+import { GLTFLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js";
+import {
+  createBallisticParameters,
+  getBallisticPoint,
+  getNetCrossingT,
+  normalizePhysicsState,
+  projectAntennaShadowEnd,
+  rotateClockwisePositions
+} from "./tactics-core.js?v=20260817-fidelity11";
+
+let playerModelAsset = null;
+try {
+  playerModelAsset = await new GLTFLoader().loadAsync("./assets/volleyball-player.glb");
+} catch (error) {
+  console.warn("Animated player model could not be loaded; using the procedural fallback.", error);
+}
 
 const app = document.getElementById("app");
 const ui = {
@@ -28,6 +46,7 @@ const ui = {
   powerValue: document.getElementById("powerValue"),
   mergeShadows: document.getElementById("mergeShadows"),
   netShadowToggle: document.getElementById("netShadowToggle"),
+  trajectoryStatus: document.getElementById("trajectoryStatus"),
 
   saveLineup: document.getElementById("saveLineup"),
   loadLineup: document.getElementById("loadLineup"),
@@ -84,11 +103,13 @@ const COURT = {
 
 const BLOCK_THRESHOLD = 0.9; // Max distance between blockers to be considered a "tight" unified block
 const BLOCKER_RADIUS_FACTOR = 0.16; // Multiplier for player height to determine blocking width
+const TACTICAL_SHADOW_DEPTH = 22;
+const EDGE_FOG_FADE_DISTANCE = 9;
 
 // Scene
 const scene = new THREE.Scene();
 
-// Gradient background (arena feel)
+// Restrained studio-style gradient keeps attention on the court.
 const bgCanvas = document.createElement("canvas");
 bgCanvas.width = 2;
 bgCanvas.height = 512;
@@ -103,30 +124,61 @@ const bgTexture = new THREE.CanvasTexture(bgCanvas);
 bgTexture.colorSpace = THREE.SRGBColorSpace;
 scene.background = bgTexture;
 
-// Fog for depth
-scene.fog = new THREE.FogExp2(0x0a1520, 0.012);
+// Black distance fog complements the court-edge veil below.
+scene.fog = new THREE.FogExp2(0x030507, 0.012);
 
 // Camera
 const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 200);
-camera.position.set(0, 16, -22);
-camera.lookAt(0, 0, 0);
+camera.position.set(0, 15.2, -24);
+camera.lookAt(0, 0.45, 0);
 
 // Renderer
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  powerPreference: "high-performance",
+  stencil: true
+});
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = 0.76;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
+renderer.domElement.dataset.playerModel = playerModelAsset ? "gltf" : "procedural";
+
+// A neutral image-based lighting environment gives PBR materials coherent
+// reflections without requiring a large HDR download.
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+const roomEnvironment = new RoomEnvironment();
+scene.environment = pmremGenerator.fromScene(roomEnvironment, 0.04).texture;
+roomEnvironment.dispose();
+pmremGenerator.dispose();
 
 // Post-processing
-const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { stencilBuffer: true }));
+const composerTarget = new THREE.WebGLRenderTarget(innerWidth, innerHeight, {
+  type: THREE.HalfFloatType,
+  depthBuffer: true,
+  stencilBuffer: true
+});
+const composer = new EffectComposer(renderer, composerTarget);
 const renderPass = new RenderPass(scene, camera);
 renderPass.clearStencil = true;
 composer.addPass(renderPass);
+
+const gtaoPass = new GTAOPass(
+  scene,
+  camera,
+  innerWidth,
+  innerHeight,
+  undefined,
+  { radius: 0.22, distanceExponent: 1.6, thickness: 1.2, distanceFallOff: 0.8, scale: 0.9, samples: 8 },
+  { radius: 4, rings: 2, samples: 8 }
+);
+gtaoPass.blendIntensity = 0.55;
+gtaoPass.enabled = innerWidth > 700;
+composer.addPass(gtaoPass);
 
 const bloomPass = new UnrealBloomPass(
   new THREE.Vector2(innerWidth, innerHeight),
@@ -139,15 +191,12 @@ composer.addPass(bloomPass);
 const smaaPass = new SMAAPass(innerWidth, innerHeight);
 composer.addPass(smaaPass);
 
-const outputPass = new OutputPass();
-composer.addPass(outputPass);
-
 // Vignette shader
 const VignetteShader = {
   uniforms: {
     tDiffuse: { value: null },
-    darkness: { value: 0.5 },
-    offset: { value: 0.9 }
+    darkness: { value: 0.34 },
+    offset: { value: 0.74 }
   },
   vertexShader: `
     varying vec2 vUv;
@@ -164,13 +213,18 @@ const VignetteShader = {
     void main() {
       vec4 color = texture2D(tDiffuse, vUv);
       float dist = distance(vUv, vec2(0.5));
-      color.rgb *= smoothstep(0.8, offset * 0.5, dist * (darkness + offset));
+      float vignette = 1.0 - smoothstep(offset, offset + 0.35, dist * (1.0 + darkness));
+      color.rgb *= mix(0.86, 1.0, vignette);
       gl_FragColor = color;
     }
   `
 };
 const vignettePass = new ShaderPass(VignetteShader);
 composer.addPass(vignettePass);
+
+// Tone mapping and sRGB conversion must happen after all visual effects.
+const outputPass = new OutputPass();
+composer.addPass(outputPass);
 
 // Controls
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -181,11 +235,11 @@ controls.minDistance = 8;
 controls.maxDistance = 45;
 controls.minPolarAngle = Math.PI / 6;
 controls.maxPolarAngle = Math.PI / 2.1;
-controls.target.set(0, 0, 0);
+controls.target.set(0, 0.45, 0);
 controls.update();
 
 // Lights - Stadium lighting
-const ambientLight = new THREE.AmbientLight(0x4488cc, 0.3);
+const ambientLight = new THREE.AmbientLight(0x6f91ad, 0.22);
 scene.add(ambientLight);
 
 // Main key light
@@ -213,7 +267,7 @@ const rimLight = new THREE.DirectionalLight(0xffeedd, 0.6);
 rimLight.position.set(0, 8, -15);
 scene.add(rimLight);
 
-// Stadium spot lights
+// Overhead court lights
 function createSpotLight(x, z, intensity, color, casting = false) {
   const spot = new THREE.SpotLight(color, intensity, 40, Math.PI / 6, 0.5, 1);
   spot.position.set(x, 18, z);
@@ -231,21 +285,21 @@ function createSpotLight(x, z, intensity, color, casting = false) {
   return spot;
 }
 
-createSpotLight(-12, 12, 120, 0xffffff, true);
+createSpotLight(-12, 12, 95, 0xffffff, false);
 createSpotLight(12, 12, 60, 0xffffff, false);
-createSpotLight(-12, -12, 80, 0xffeedd, true);
+createSpotLight(-12, -12, 70, 0xffeedd, false);
 createSpotLight(12, -12, 40, 0xffeedd, false);
 
 // Hemisphere light for realistic ambient
 const hemi = new THREE.HemisphereLight(0x87ceeb, 0x362a1a, 0.25);
 scene.add(hemi);
 
-// Arena floor (outside court)
+// Neutral floor outside the court
 const arenaFloorGeo = new THREE.PlaneGeometry(60, 60);
 const arenaFloorMat = new THREE.MeshStandardMaterial({
-  color: 0x1a1a1a,
-  roughness: 0.9,
-  metalness: 0.1
+  color: 0x080b0e,
+  roughness: 0.92,
+  metalness: 0.05
 });
 const arenaFloor = new THREE.Mesh(arenaFloorGeo, arenaFloorMat);
 arenaFloor.rotation.x = -Math.PI / 2;
@@ -257,108 +311,105 @@ scene.add(arenaFloor);
 const courtGroup = new THREE.Group();
 scene.add(courtGroup);
 
-// Hardwood court texture
-const courtTexture = (() => {
-  const size = 2048;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-
-  // Base wood color
-  const baseGrad = ctx.createLinearGradient(0, 0, size, size);
-  baseGrad.addColorStop(0, "#c4956a");
-  baseGrad.addColorStop(0.25, "#b8895e");
-  baseGrad.addColorStop(0.5, "#c9a070");
-  baseGrad.addColorStop(0.75, "#b38454");
-  baseGrad.addColorStop(1, "#c4956a");
-  ctx.fillStyle = baseGrad;
-  ctx.fillRect(0, 0, size, size);
-
-  // Wood grain
-  ctx.globalAlpha = 0.15;
-  for (let i = 0; i < size; i += 3) {
-    const variation = Math.sin(i * 0.1) * 20 + Math.random() * 10;
-    ctx.strokeStyle = Math.random() > 0.5 ? "#8b6b4a" : "#d4a574";
-    ctx.lineWidth = 1 + Math.random();
-    ctx.beginPath();
-    ctx.moveTo(0, i + variation);
-    ctx.bezierCurveTo(size * 0.25, i + variation + Math.random() * 5,
-      size * 0.75, i + variation - Math.random() * 5,
-      size, i + variation);
-    ctx.stroke();
-  }
-
-  // Plank lines
-  ctx.globalAlpha = 0.2;
-  ctx.strokeStyle = "#5a4030";
-  ctx.lineWidth = 2;
-  const plankWidth = size / 16;
-  for (let x = 0; x <= size; x += plankWidth) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, size);
-    ctx.stroke();
-  }
-
-  // Subtle noise
-  ctx.globalAlpha = 0.05;
-  for (let i = 0; i < 5000; i++) {
-    ctx.fillStyle = Math.random() > 0.5 ? "#ffffff" : "#000000";
-    ctx.fillRect(Math.random() * size, Math.random() * size, 2, 2);
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
+// Authored maple texture generated for the project. Mirrored repeat avoids an
+// obvious edge even on GPUs that sample the outermost texels aggressively.
+function configureCourtTexture(texture, colorSpace = THREE.NoColorSpace) {
+  texture.colorSpace = colorSpace;
+  texture.wrapS = THREE.MirroredRepeatWrapping;
+  texture.wrapT = THREE.MirroredRepeatWrapping;
   texture.repeat.set(2, 4);
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
   return texture;
-})();
+}
 
-// Court normal map
-const courtNormalMap = (() => {
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  ctx.fillStyle = "#8080ff";
-  ctx.fillRect(0, 0, size, size);
-
-  // Subtle wood grain normals
-  ctx.globalAlpha = 0.1;
-  for (let i = 0; i < size; i += 2) {
-    ctx.strokeStyle = `rgb(${128 + Math.random() * 20}, ${128 + Math.random() * 10}, 255)`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(0, i);
-    ctx.lineTo(size, i);
-    ctx.stroke();
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(2, 4);
-  return texture;
-})();
+const courtTexture = configureCourtTexture(
+  new THREE.TextureLoader().load("./assets/court-maple.webp"),
+  THREE.SRGBColorSpace
+);
+const courtRoughnessMap = configureCourtTexture(
+  new THREE.TextureLoader().load("./assets/court-roughness.webp")
+);
+const courtHeightMap = configureCourtTexture(
+  new THREE.TextureLoader().load("./assets/court-height.webp")
+);
 
 const court = new THREE.Mesh(
   new THREE.PlaneGeometry(COURT.width, COURT.length),
-  new THREE.MeshStandardMaterial({
+  new THREE.MeshPhysicalMaterial({
+    color: 0xb98755,
     map: courtTexture,
-    normalMap: courtNormalMap,
-    normalScale: new THREE.Vector2(0.1, 0.1),
-    roughness: 0.35,
+    bumpMap: courtHeightMap,
+    bumpScale: 0.014,
+    roughnessMap: courtRoughnessMap,
+    roughness: 0.68,
     metalness: 0.0,
-    envMapIntensity: 0.3
+    clearcoat: 0.24,
+    clearcoatRoughness: 0.22,
+    envMapIntensity: 0.55
   })
 );
 court.rotation.x = -Math.PI / 2;
 court.receiveShadow = true;
 courtGroup.add(court);
+
+const courtBase = new THREE.Mesh(
+  new THREE.BoxGeometry(COURT.width + 0.38, 0.12, COURT.length + 0.38),
+  new THREE.MeshPhysicalMaterial({
+    color: 0x101820,
+    roughness: 0.5,
+    metalness: 0.12,
+    clearcoat: 0.18,
+    clearcoatRoughness: 0.4
+  })
+);
+courtBase.position.y = -0.085;
+courtBase.receiveShadow = true;
+courtGroup.add(courtBase);
+
+// A world-space rectangular falloff darkens everything beyond the court. The
+// tactical projections remain readable for several metres before dissolving
+// into black, while the playing surface itself stays completely unaffected.
+const courtEdgeFog = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.ShaderMaterial({
+    uniforms: {
+      fogColor: { value: new THREE.Color(0x010203) },
+      halfExtents: { value: new THREE.Vector2(COURT.halfWidth, COURT.halfLength) },
+      fadeDistance: { value: EDGE_FOG_FADE_DISTANCE }
+    },
+    vertexShader: `
+      varying vec2 vWorldXZ;
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldXZ = worldPosition.xz;
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 fogColor;
+      uniform vec2 halfExtents;
+      uniform float fadeDistance;
+      varying vec2 vWorldXZ;
+
+      void main() {
+        vec2 outside = max(abs(vWorldXZ) - halfExtents, 0.0);
+        float distanceFromCourt = length(outside);
+        float haze = smoothstep(0.25, fadeDistance, distanceFromCourt);
+        float grain = fract(sin(dot(vWorldXZ, vec2(12.9898, 78.233))) * 43758.5453);
+        float alpha = haze * mix(0.91, 0.96, grain);
+        gl_FragColor = vec4(fogColor, alpha);
+      }
+    `,
+    transparent: true,
+    depthTest: true,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  })
+);
+courtEdgeFog.rotation.x = -Math.PI / 2;
+courtEdgeFog.position.y = 0.035;
+courtEdgeFog.renderOrder = 50;
+scene.add(courtEdgeFog);
 
 // Court lines (thick painted lines)
 const linesMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -526,25 +577,82 @@ function updateNetHeightVisuals() {
   leftAntenna.position.y = h - 1.0 + 0.9;
   rightAntenna.position.y = h - 1.0 + 0.9;
 
+  updateAttackIndicator();
   updateNetShadow();
   updateAntennaShadows();
   updateBlockShadow();
 }
 
-ui.netHeight.addEventListener("change", updateNetHeightVisuals);
+ui.netHeight.addEventListener("change", () => {
+  updateNetHeightVisuals();
+  saveLastKnown();
+});
+
+function drawPlayerLabelCanvas(canvas, text, isBlocker) {
+  const ctx = canvas.getContext("2d");
+  const accent = isBlocker ? "#55b7ff" : "#75d77d";
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, "rgba(12,18,25,0.94)");
+  gradient.addColorStop(1, "rgba(5,9,14,0.84)");
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(5, 5, canvas.width - 10, canvas.height - 10, 24);
+  else ctx.rect(5, 5, canvas.width - 10, canvas.height - 10);
+  ctx.fill();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  ctx.shadowColor = "rgba(0,0,0,0.7)";
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 68px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(text).slice(0, 6), canvas.width / 2, canvas.height / 2 + 2);
+  ctx.shadowBlur = 0;
+}
+
+function createPlayerLabelSprite(label, isBlocker) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 128;
+  drawPlayerLabelCanvas(canvas, label, isBlocker);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true }));
+  sprite.name = "labelSprite";
+  sprite.scale.set(0.9, 0.45, 1);
+  return sprite;
+}
 
 // Dynamic 3D character models with anatomically correct proportions
-function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side = "home", isBlocker = false }) {
+function createProceduralPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side = "home", isBlocker = false }) {
   const group = new THREE.Group();
   const H = height;
 
   // Materials
-  const skinMat = new THREE.MeshStandardMaterial({ color: 0xe8beac, roughness: 0.7, metalness: 0.0 });
-  const jerseyMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.5, metalness: 0.05 });
-  const shortsMat = new THREE.MeshStandardMaterial({ color: 0x1a2a4a, roughness: 0.6 });
-  const sockMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6 });
-  const shoeMat = new THREE.MeshStandardMaterial({ color: 0x222244, roughness: 0.4, metalness: 0.1 });
-  const hairMat = new THREE.MeshStandardMaterial({ color: 0x3a2518, roughness: 0.9 });
+  const skinPalette = [0xf0c7ae, 0xd9a07e, 0xb97858, 0x8f5c43, 0x6f4936, 0xe5b99b];
+  const labelHash = String(label).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const skinColor = skinPalette[labelHash % skinPalette.length];
+  const hairPalette = [0x2b1b13, 0x5a3822, 0x171719, 0x8a603a, 0x3d2a22];
+  const skinMat = new THREE.MeshPhysicalMaterial({ color: skinColor, roughness: 0.72, metalness: 0.0, sheen: 0.08 });
+  const jerseyMat = new THREE.MeshPhysicalMaterial({
+    color,
+    roughness: 0.68,
+    metalness: 0.0,
+    sheen: 0.34,
+    sheenColor: new THREE.Color(0xffffff),
+    sheenRoughness: 0.8
+  });
+  const jerseyTrimMat = new THREE.MeshStandardMaterial({ color: 0xdceeff, roughness: 0.58, metalness: 0.02 });
+  const shortsMat = new THREE.MeshPhysicalMaterial({ color: 0x122038, roughness: 0.66, sheen: 0.18 });
+  const sockMat = new THREE.MeshStandardMaterial({ color: 0xf2f5f7, roughness: 0.72 });
+  const shoeMat = new THREE.MeshPhysicalMaterial({ color: 0x151b2a, roughness: 0.38, clearcoat: 0.22, clearcoatRoughness: 0.45 });
+  const shoeAccentMat = new THREE.MeshStandardMaterial({ color: 0x72d4ff, roughness: 0.52 });
+  const hairMat = new THREE.MeshStandardMaterial({ color: hairPalette[labelHash % hairPalette.length], roughness: 0.92 });
 
   // === PROPORTIONS (based on 8-head athletic figure) ===
   const headH = H / 7.5;  // Head is ~1/7.5 of total height for athletic build
@@ -602,6 +710,18 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   torsoMesh.scale.z = 0.65;
   torsoMesh.castShadow = true;
   torso.add(torsoMesh);
+
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(cw * 0.34, H * 0.008, 8, 24), jerseyTrimMat);
+  collar.rotation.x = Math.PI / 2;
+  collar.scale.z = 0.72;
+  collar.position.set(0, torsoH * 0.93, 0);
+  torso.add(collar);
+
+  const chestBand = new THREE.Mesh(new THREE.TorusGeometry(cw * 0.92, H * 0.007, 6, 32), jerseyTrimMat);
+  chestBand.rotation.x = Math.PI / 2;
+  chestBand.scale.z = 0.66;
+  chestBand.position.set(0, torsoH * 0.64, 0);
+  torso.add(chestBand);
 
   // === SHOULDERS (Children of torso) ===
   const shoulderRad = H * 0.045;
@@ -718,6 +838,25 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   hair.rotation.x = 0.25; // Tilted forward to look more like eyes are facing ahead
   headJoint.add(hair);
 
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x17202a, roughness: 0.45 });
+  const eyeGeo = new THREE.SphereGeometry(headRad * 0.075, 8, 8);
+  for (const sideX of [-1, 1]) {
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.position.set(sideX * headRad * 0.31, headRad * 1.12, headRad * 0.76);
+    eye.scale.y = 1.1;
+    headJoint.add(eye);
+
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(headRad * 0.13, 8, 8), skinMat);
+    ear.position.set(sideX * headRad * 0.87, headRad, 0);
+    ear.scale.set(0.5, 1, 0.7);
+    headJoint.add(ear);
+  }
+
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(headRad * 0.075, headRad * 0.2, 8), skinMat);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.set(0, headRad * 0.92, headRad * 0.84);
+  headJoint.add(nose);
+
   // === LEGS (Hierarchical) ===
   const thighTopRad = H * 0.048;
   const thighBotRad = H * 0.038;
@@ -752,6 +891,15 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   rightKnee.position.set(0, -thighH, 0);
   rightThigh.add(rightKnee);
   rightKnee.add(new THREE.Mesh(kneeGeo, skinMat));
+
+  const kneePadGeo = new THREE.SphereGeometry(kneeRad * 1.12, 10, 8);
+  for (const knee of [leftKnee, rightKnee]) {
+    const pad = new THREE.Mesh(kneePadGeo, shortsMat);
+    pad.position.z = kneeRad * 0.55;
+    pad.scale.set(0.92, 0.82, 0.48);
+    pad.castShadow = true;
+    knee.add(pad);
+  }
 
   const calfTopRad = H * 0.042;
   const calfBotRad = H * 0.028;
@@ -793,30 +941,91 @@ function createPlayer({ color = 0x1565c0, height = 1.9, jump = 3.10, label, side
   rightShoe.position.set(0, -calfH - footH / 2, H * 0.03);
   rightCalf.add(rightShoe);
 
+  for (const shoe of [leftShoe, rightShoe]) {
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(H * 0.06, H * 0.012, H * 0.05), shoeAccentMat);
+    stripe.position.set(0, footH * 0.55, H * 0.045);
+    stripe.rotation.y = -0.3;
+    shoe.add(stripe);
+  }
+
   // === LABEL SPRITE ===
-  const labelCanvas = document.createElement("canvas");
-  labelCanvas.width = 120;
-  labelCanvas.height = 60;
-  const lctx = labelCanvas.getContext("2d");
-  lctx.fillStyle = "rgba(0,0,0,0.6)";
-  if (lctx.roundRect) lctx.roundRect(0, 0, 120, 60, 12); else lctx.rect(0, 0, 120, 60);
-  lctx.fill();
-  lctx.fillStyle = "white";
-  lctx.font = "bold 34px sans-serif";
-  lctx.textAlign = "center";
-  lctx.textBaseline = "middle";
-  lctx.fillText(label, 60, 30);
-  const labelTex = new THREE.CanvasTexture(labelCanvas);
-  const labelSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex, transparent: true }));
-  labelSprite.name = "labelSprite";
-  labelSprite.scale.set(0.8, 0.4, 1);
-  group.add(labelSprite);
+  group.add(createPlayerLabelSprite(label, isBlocker));
 
   // Metadata
-  group.userData = { label, side, kind: "player", height, jump };
+  group.userData = {
+    label,
+    side,
+    kind: "player",
+    height,
+    jump,
+    jerseyMaterial: jerseyMat,
+    jerseyTrimMaterial: jerseyTrimMat,
+    animationPhase: (labelHash % 11) * 0.57
+  };
 
   setPlayerStance(group, isBlocker);
   return group;
+}
+
+function createGLTFPlayer({ height = 1.9, jump = 3.10, label, side = "home", isBlocker = false }) {
+  const group = new THREE.Group();
+  const model = playerModelAsset.scene.clone(true);
+  const jerseyMaterials = [];
+  const jerseyTrimMaterials = [];
+  const skinMaterials = [];
+  const hairMaterials = [];
+  const skinPalette = [0xf0c7ae, 0xd9a07e, 0xb97858, 0x8f5c43, 0x6f4936, 0xe5b99b];
+  const hairPalette = [0x2b1b13, 0x5a3822, 0x171719, 0x8a603a, 0x3d2a22];
+  const labelHash = String(label).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+
+  model.name = "animatedPlayerModel";
+  model.scale.setScalar(height / 1.9);
+  model.traverse(object => {
+    if (!object.isMesh) return;
+    object.geometry = object.geometry.clone();
+    const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    const clonedMaterials = sourceMaterials.map(material => material.clone());
+    object.material = Array.isArray(object.material) ? clonedMaterials : clonedMaterials[0];
+    clonedMaterials.forEach(material => {
+      if (material.name === "Jersey") jerseyMaterials.push(material);
+      if (material.name === "JerseyTrim") jerseyTrimMaterials.push(material);
+      if (material.name === "Skin") skinMaterials.push(material);
+      if (material.name === "Hair") hairMaterials.push(material);
+    });
+    object.castShadow = true;
+    object.receiveShadow = true;
+  });
+  skinMaterials.forEach(material => material.color.setHex(skinPalette[labelHash % skinPalette.length]));
+  hairMaterials.forEach(material => material.color.setHex(hairPalette[labelHash % hairPalette.length]));
+
+  group.add(model);
+  group.add(createPlayerLabelSprite(label, isBlocker));
+
+  const mixer = new THREE.AnimationMixer(model);
+  const actions = Object.fromEntries(
+    playerModelAsset.animations.map(clip => [clip.name, mixer.clipAction(clip)])
+  );
+  group.userData = {
+    label,
+    side,
+    kind: "player",
+    height,
+    jump,
+    isGLTFModel: true,
+    model,
+    mixer,
+    actions,
+    jerseyMaterials,
+    jerseyTrimMaterials,
+    animationPhase: (labelHash % 11) * 0.57
+  };
+
+  setPlayerStance(group, isBlocker);
+  return group;
+}
+
+function createPlayer(options) {
+  return playerModelAsset ? createGLTFPlayer(options) : createProceduralPlayer(options);
 }
 
 function setPlayerStance(player, isBlocker) {
@@ -829,7 +1038,6 @@ function setPlayerStance(player, isBlocker) {
   const torso = player.getObjectByName("torso");
   const neck = player.getObjectByName("neck");
   const head = player.getObjectByName("head");
-  const hair = player.getObjectByName("hair");
   const leftShoulder = player.getObjectByName("leftShoulder");
   const rightShoulder = player.getObjectByName("rightShoulder");
   const leftUpperArm = player.getObjectByName("leftUpperArm");
@@ -856,20 +1064,48 @@ function setPlayerStance(player, isBlocker) {
   const upperArmH = H * 0.16;
   const forearmH = H * 0.14;
 
-  // Update jersey color
-  if (torso) {
-    const mesh = torso.children.find(c => c.isMesh);
-    if (mesh) {
-      mesh.material = new THREE.MeshStandardMaterial({
-        color: isBlocker ? 0x1565c0 : 0x2e7d32,
-        roughness: 0.5,
-        metalness: 0.05
-      });
+  // Update the player's shared jersey materials in place. This recolors the
+  // torso and shoulders together and avoids leaking a GPU material per switch.
+  const jerseyMaterials = player.userData.jerseyMaterials
+    ?? [player.userData.jerseyMaterial].filter(Boolean);
+  const jerseyTrimMaterials = player.userData.jerseyTrimMaterials
+    ?? [player.userData.jerseyTrimMaterial].filter(Boolean);
+  jerseyMaterials.forEach(material => material.color.setHex(isBlocker ? 0x1769aa : 0x2f8248));
+  jerseyTrimMaterials.forEach(material => material.color.setHex(isBlocker ? 0xcfeeff : 0xd7f6d8));
+  if (labelSprite?.material?.map?.image) {
+    drawPlayerLabelCanvas(labelSprite.material.map.image, player.userData.label, isBlocker);
+    labelSprite.material.map.needsUpdate = true;
+  }
+
+  if (player.userData.isGLTFModel) {
+    const standingReach = H * 1.25;
+    player.userData.dragHeight = isBlocker ? Math.max(0, J - standingReach) : 0;
+    if (labelSprite) labelSprite.position.y = H + 0.25;
+
+    const action = player.userData.actions?.[isBlocker ? "Block" : "Defend"];
+    const previousAction = player.userData.currentAction;
+    if (action && action !== previousAction) {
+      action.reset().setLoop(THREE.LoopOnce, 1);
+      action.clampWhenFinished = true;
+      if (player.userData.stanceInitialized) {
+        previousAction?.fadeOut(0.12);
+        action.fadeIn(0.12).play();
+      } else {
+        action.play();
+        player.userData.mixer.update(action.getClip().duration);
+      }
+      player.userData.currentAction = action;
     }
+
+    if (!player.userData.stanceInitialized) {
+      player.position.y = player.userData.dragHeight;
+      player.userData.stanceInitialized = true;
+    }
+    return;
   }
 
   // 1. Reset all hierarchical rotations
-  [hips, torso, neck, head, hair, leftShoulder, rightShoulder, leftUpperArm, rightUpperArm,
+  [hips, torso, neck, head, leftShoulder, rightShoulder, leftUpperArm, rightUpperArm,
     leftElbow, rightElbow, leftForearm, rightForearm, leftThigh, rightThigh, leftKnee, rightKnee,
     leftCalf, rightCalf, leftShoe, rightShoe, shorts].forEach(p => {
       if (p) {
@@ -941,7 +1177,10 @@ function setPlayerStance(player, isBlocker) {
   }
 
   if (labelSprite) labelSprite.position.y = H + 0.25;
-  player.position.y = player.userData.dragHeight;
+  if (!player.userData.stanceInitialized) {
+    player.position.y = player.userData.dragHeight;
+    player.userData.stanceInitialized = true;
+  }
 }
 
 function updatePlayerLabel(player, text, silent = false) {
@@ -950,20 +1189,35 @@ function updatePlayerLabel(player, text, silent = false) {
   if (!labelSprite) return;
 
   const canvas = labelSprite.material.map.image;
-  const ctx = canvas.getContext("2d");
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  if (ctx.roundRect) ctx.roundRect(0, 0, 120, 60, 12); else ctx.rect(0, 0, 120, 60);
-  ctx.fill();
-  ctx.fillStyle = "white";
-  ctx.font = "bold 34px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, 60, 30);
-
+  drawPlayerLabelCanvas(canvas, text, player.userData.isBlocker);
   labelSprite.material.map.needsUpdate = true;
   if (!silent) saveLastKnown();
+}
+
+function disposeObject3D(root) {
+  const geometries = new Set();
+  const materials = new Set();
+  const textures = new Set();
+
+  if (root.userData.mixer) {
+    root.userData.mixer.stopAllAction();
+    if (root.userData.model) root.userData.mixer.uncacheRoot(root.userData.model);
+  }
+
+  root.traverse(object => {
+    if (object.geometry) geometries.add(object.geometry);
+    const objectMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    objectMaterials.filter(Boolean).forEach(material => {
+      materials.add(material);
+      for (const value of Object.values(material)) {
+        if (value?.isTexture) textures.add(value);
+      }
+    });
+  });
+
+  textures.forEach(texture => texture.dispose());
+  materials.forEach(material => material.dispose());
+  geometries.forEach(geometry => geometry.dispose());
 }
 
 function updatePlayerHeight(player, newHeight, silent = false) {
@@ -995,7 +1249,9 @@ function updatePlayerHeight(player, newHeight, silent = false) {
 
   scene.add(newPlayer);
   if (selectedPlayer === player) selectedPlayer = newPlayer;
+  disposeObject3D(player);
 
+  updateAttackIndicator();
   updateBlockShadow();
   updatePlayerRotations();
   if (!silent) saveLastKnown();
@@ -1030,14 +1286,32 @@ function updatePlayerJump(player, newJump, silent = false) {
 
   scene.add(newPlayer);
   if (selectedPlayer === player) selectedPlayer = newPlayer;
+  disposeObject3D(player);
 
+  updateAttackIndicator();
   updateBlockShadow();
   updatePlayerRotations();
   if (!silent) saveLastKnown();
 }
 
+function readStorageJSON(key, fallback) {
+  const raw = localStorage.getItem(key);
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    console.warn(`Ignoring invalid saved data for ${key}`, error);
+    return fallback;
+  }
+}
+
+function finiteInRange(value, min, max, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? THREE.MathUtils.clamp(number, min, max) : fallback;
+}
+
 function refreshDropdowns() {
-  const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+  const rosters = readStorageJSON("volleyballer_rosters", {});
   ui.lineupList.innerHTML = '<option value="">Select Lineup...</option>';
   Object.keys(rosters).sort().forEach(name => {
     const opt = document.createElement("option");
@@ -1046,7 +1320,7 @@ function refreshDropdowns() {
     ui.lineupList.appendChild(opt);
   });
 
-  const savedTactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+  const savedTactics = readStorageJSON("volleyballer_tactics", {});
   const allTactics = { ...DEFAULT_TACTICS, ...savedTactics };
   ui.posList.innerHTML = '<option value="">Select Position...</option>';
   Object.keys(allTactics).sort().forEach(name => {
@@ -1067,7 +1341,7 @@ function saveLineup(key = "volleyballer_lineup", silent = false) {
   if (key === "NAMED") {
     const name = ui.lineupName.value.trim();
     if (!name) return alert("Please enter a name for the lineup.");
-    const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+    const rosters = readStorageJSON("volleyballer_rosters", {});
     rosters[name] = data;
     localStorage.setItem("volleyballer_rosters", JSON.stringify(rosters));
     ui.lineupName.value = "";
@@ -1084,23 +1358,22 @@ function loadLineup(key = "volleyballer_lineup", silent = false) {
   if (key === "NAMED") {
     const name = ui.lineupList.value;
     if (!name) return alert("Please select a lineup from the list.");
-    const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+    const rosters = readStorageJSON("volleyballer_rosters", {});
     data = rosters[name];
   } else {
-    const raw = localStorage.getItem(key);
-    if (raw) data = JSON.parse(raw);
+    data = readStorageJSON(key, null);
   }
 
-  if (!data) {
+  if (!Array.isArray(data)) {
     if (!silent) alert("No saved lineup found.");
     return;
   }
 
   data.forEach((d, i) => {
     if (players[i]) {
-      updatePlayerLabel(players[i], d.label, true);
-      updatePlayerHeight(players[i], d.height, true);
-      if (d.jump) updatePlayerJump(players[i], d.jump, true);
+      updatePlayerLabel(players[i], String(d.label ?? i + 1).slice(0, 6), true);
+      updatePlayerHeight(players[i], finiteInRange(d.height, 1.6, 2.2, 1.9), true);
+      updatePlayerJump(players[i], finiteInRange(d.jump, 2, 4, 3.1), true);
     }
   });
 
@@ -1119,7 +1392,7 @@ function deleteLineup() {
   const name = ui.lineupList.value;
   if (!name) return;
   if (confirm(`Delete lineup "${name}"?`)) {
-    const rosters = JSON.parse(localStorage.getItem("volleyballer_rosters") || "{}");
+    const rosters = readStorageJSON("volleyballer_rosters", {});
     delete rosters[name];
     localStorage.setItem("volleyballer_rosters", JSON.stringify(rosters));
     refreshDropdowns();
@@ -1132,7 +1405,7 @@ function savePositions(key = "volleyballer_positions", silent = false) {
   if (key === "NAMED") {
     const name = ui.posName.value.trim();
     if (!name) return alert("Please enter a name for the tactical position.");
-    const tactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+    const tactics = readStorageJSON("volleyballer_tactics", {});
     tactics[name] = data;
     localStorage.setItem("volleyballer_tactics", JSON.stringify(tactics));
     ui.posName.value = "";
@@ -1154,12 +1427,11 @@ function loadPositions(key = "volleyballer_positions") {
     if (DEFAULT_TACTICS[name]) {
       data = DEFAULT_TACTICS[name];
     } else {
-      const tactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+      const tactics = readStorageJSON("volleyballer_tactics", {});
       data = tactics[name];
     }
   } else {
-    const raw = localStorage.getItem(key);
-    if (raw) data = JSON.parse(raw);
+    data = readStorageJSON(key, null);
   }
 
   if (data) applyTacticalState(data);
@@ -1172,7 +1444,7 @@ function deletePosition() {
     return alert("Default tactical presets cannot be deleted.");
   }
   if (confirm(`Delete position "${name}"?`)) {
-    const tactics = JSON.parse(localStorage.getItem("volleyballer_tactics") || "{}");
+    const tactics = readStorageJSON("volleyballer_tactics", {});
     delete tactics[name];
     localStorage.setItem("volleyballer_tactics", JSON.stringify(tactics));
     refreshDropdowns();
@@ -1194,14 +1466,6 @@ const players = [
 ];
 
 function resetPlayerPositions() {
-  hideZoneNodes();
-  zones.forEach(z => {
-    z.geometry.dispose();
-    z.material.dispose();
-    scene.remove(z);
-  });
-  zones.length = 0;
-
   players[0].position.set(-3.0, players[0].userData.dragHeight, -6.0); // Pos 1
   players[1].position.set(-3.0, players[1].userData.dragHeight, -0.6); // Pos 2
   players[2].position.set(0.0, players[2].userData.dragHeight, -0.6);  // Pos 3
@@ -1213,8 +1477,6 @@ function resetPlayerPositions() {
     const isAtNet = p.position.z > -1.5;
     setPlayerStance(p, isAtNet);
   });
-
-  ball.position.set(0, 3, 4);
 
   if (selectedPlayer) {
     selectionRing.position.x = selectedPlayer.position.x;
@@ -1296,35 +1558,56 @@ ball.add(ballHitArea);
 const allPlayers = [...players, ball];
 scene.add(...players, ball);
 
-// Block shadow (wedge from blocker occlusion)
-const shadowMat = new THREE.MeshBasicMaterial({
-  color: 0x000000,
+// Block shadows first write a binary stencil mask. A single blue fill is then
+// drawn through that mask, so overlapping wedges form a visual union instead
+// of accumulating alpha and becoming over-saturated.
+const blockShadowMaskMat = new THREE.MeshBasicMaterial({
+  colorWrite: false,
+  depthTest: false,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+  stencilWrite: true,
+  stencilWriteMask: 0xff,
+  stencilRef: 1,
+  stencilFunc: THREE.AlwaysStencilFunc,
+  stencilFail: THREE.KeepStencilOp,
+  stencilZFail: THREE.KeepStencilOp,
+  stencilZPass: THREE.ReplaceStencilOp
+});
+const blockShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), blockShadowMaskMat);
+blockShadow.renderOrder = -2;
+scene.add(blockShadow);
+
+const blockShadowFillMat = new THREE.MeshBasicMaterial({
+  color: 0x208ce5,
   transparent: true,
-  opacity: 0.45,
+  opacity: 0.26,
   side: THREE.DoubleSide,
   depthWrite: false,
   stencilWrite: true,
+  stencilWriteMask: 0x00,
+  stencilRef: 1,
   stencilFunc: THREE.EqualStencilFunc,
-  stencilRef: 0,
-  stencilZPass: THREE.IncrementStencilOp
+  stencilFuncMask: 0xff,
+  stencilFail: THREE.KeepStencilOp,
+  stencilZFail: THREE.KeepStencilOp,
+  stencilZPass: THREE.KeepStencilOp
 });
-const blockShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), shadowMat);
-blockShadow.rotation.set(0, 0, 0);
-blockShadow.position.set(0, 0, 0);
-blockShadow.renderOrder = -1;
-scene.add(blockShadow);
+const blockShadowFill = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), blockShadowFillMat);
+blockShadowFill.rotation.x = -Math.PI / 2;
+blockShadowFill.position.y = 0.012;
+blockShadowFill.renderOrder = -1;
+scene.add(blockShadowFill);
 
 // Net shadow (dead zone where hard hits can't reach)
 const netShadowMat = new THREE.MeshBasicMaterial({
-  color: 0x000000,
+  color: 0xf2a93b,
   transparent: true,
-  opacity: 0.45,
+  opacity: 0.2,
   side: THREE.DoubleSide,
   depthWrite: false,
-  stencilWrite: true,
-  stencilFunc: THREE.EqualStencilFunc,
-  stencilRef: 0,
-  stencilZPass: THREE.IncrementStencilOp
+  polygonOffset: true,
+  polygonOffsetFactor: -1.5
 });
 const netShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), netShadowMat);
 netShadow.renderOrder = -1;
@@ -1332,11 +1615,13 @@ scene.add(netShadow);
 
 // Antenna shadows (show unreachable areas based on antenna positioning)
 const antennaShadowMat = new THREE.MeshBasicMaterial({
-  color: 0x000000,
+  color: 0xff5b62,
   transparent: true,
-  opacity: 0.45,
+  opacity: 0.24,
   side: THREE.DoubleSide,
-  depthWrite: false
+  depthWrite: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -2
 });
 const leftAntennaShadow = new THREE.Mesh(new THREE.BufferGeometry(), antennaShadowMat);
 leftAntennaShadow.renderOrder = -1;
@@ -1347,7 +1632,13 @@ rightAntennaShadow.renderOrder = -1;
 scene.add(rightAntennaShadow);
 
 // Attack indicator (arced tube)
-const attackLineMat = new THREE.MeshBasicMaterial({ color: 0x8b00ff });
+const attackLineMat = new THREE.MeshStandardMaterial({
+  color: 0x8f5bff,
+  emissive: 0x24105e,
+  emissiveIntensity: 1.15,
+  roughness: 0.34,
+  metalness: 0.08
+});
 let attackLine = new THREE.Mesh(new THREE.BufferGeometry(), attackLineMat);
 scene.add(attackLine);
 
@@ -1355,9 +1646,10 @@ const attackTarget = new THREE.Mesh(
   new THREE.RingGeometry(0.2, 0.45, 48),
   new THREE.MeshBasicMaterial({
     color: 0x8b00ff,
-    transparent: false,
+    transparent: true,
     opacity: 1.0,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    depthWrite: false
   })
 );
 attackTarget.rotation.x = -Math.PI / 2;
@@ -1427,9 +1719,11 @@ function createZoneMesh({ color }) {
   const material = new THREE.MeshBasicMaterial({
     color,
     transparent: true,
-    opacity: 0.65,
+    opacity: 0.34,
     side: THREE.DoubleSide,
-    depthWrite: false
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2.5
   });
 
   const geometry = new THREE.BufferGeometry();
@@ -1495,7 +1789,11 @@ function selectZone(zone) {
 }
 
 function hideZoneNodes() {
-  zoneNodeHandles.forEach(h => scene.remove(h));
+  zoneNodeHandles.forEach(handle => {
+    scene.remove(handle);
+    handle.geometry.dispose();
+    handle.material.dispose();
+  });
   zoneNodeHandles.length = 0;
   selectedZone = null;
 }
@@ -1509,7 +1807,9 @@ function clampToCourt(object) {
 
   object.position.x = THREE.MathUtils.clamp(object.position.x, minX, maxX);
   object.position.z = THREE.MathUtils.clamp(object.position.z, minZ, maxZ);
-  object.position.y = object.userData.dragHeight ?? 0;
+  if (object.userData.kind !== "player") {
+    object.position.y = object.userData.dragHeight ?? 0;
+  }
 
   if (object.userData.side === "home") {
     const netBuffer = object.userData.kind === "target" ? 0.6 : 0.3;
@@ -1520,144 +1820,157 @@ function clampToCourt(object) {
   }
 }
 
+const BALL_RADIUS = 0.21;
+
+class BallisticCurve extends THREE.Curve {
+  constructor(start, end, power) {
+    super();
+    this.start = start.clone();
+    this.end = end.clone();
+    this.parameters = createBallisticParameters(start, end, power);
+    this.duration = this.parameters.duration;
+    this.horizontalSpeed = this.parameters.horizontalSpeed;
+    this.verticalVelocity = this.parameters.verticalVelocity;
+  }
+
+  getPoint(t, target = new THREE.Vector3()) {
+    return getBallisticPoint(this.parameters, t, target);
+  }
+}
+
+class TrimmedCurve extends THREE.Curve {
+  constructor(source, endT) {
+    super();
+    this.source = source;
+    this.endT = endT;
+  }
+
+  getPoint(t, target = new THREE.Vector3()) {
+    return this.source.getPoint(t * this.endT, target);
+  }
+}
+
+function getNetCrossing(curve, start, end) {
+  const t = getNetCrossingT(start.z, end.z);
+  if (t === null) return null;
+  return { t, point: curve.getPoint(t) };
+}
+
+function getNetOrAntennaCollision(curve, start, end) {
+  const crossing = getNetCrossing(curve, start, end);
+  if (!crossing) return null;
+
+  if (Math.abs(crossing.point.x) + BALL_RADIUS > COURT.halfWidth) {
+    return { t: crossing.t, type: "antenna" };
+  }
+
+  const netHeight = parseFloat(ui.netHeight.value);
+  const netBottom = netHeight - 1;
+  if (crossing.point.y - BALL_RADIUS <= netHeight && crossing.point.y + BALL_RADIUS >= netBottom) {
+    return { t: crossing.t, type: "net" };
+  }
+  return null;
+}
+
+function getIndividualBlockCollisionT(curve, start, end, blocker) {
+  const pathX = end.x - start.x;
+  const pathZ = end.z - start.z;
+  const relX = start.x - blocker.position.x;
+  const relZ = start.z - blocker.position.z;
+  const radius = (blocker.userData.height || 1.9) * BLOCKER_RADIUS_FACTOR + BALL_RADIUS;
+  const a = pathX * pathX + pathZ * pathZ;
+  const b = 2 * (relX * pathX + relZ * pathZ);
+  const c = relX * relX + relZ * relZ - radius * radius;
+  if (a < 1e-8) return null;
+
+  const discriminant = b * b - 4 * a * c;
+  if (discriminant < 0) return null;
+  const root = Math.sqrt(discriminant);
+  const candidates = [(-b - root) / (2 * a), (-b + root) / (2 * a)];
+  if (c <= 0) candidates.unshift(0);
+  const reach = blocker.userData.jump || 3.10;
+
+  for (const t of candidates.sort((x, y) => x - y)) {
+    if (t < 0 || t > 1) continue;
+    const point = curve.getPoint(t);
+    if (point.y - BALL_RADIUS <= reach && point.y + BALL_RADIUS >= 0) return t;
+  }
+  return null;
+}
+
+function getTightBlockCollisionT(curve, blockers, currentBest = 1) {
+  const samples = 120;
+  for (let i = 0; i < blockers.length; i++) {
+    for (let j = i + 1; j < blockers.length; j++) {
+      const a = blockers[i];
+      const b = blockers[j];
+      const segmentX = b.position.x - a.position.x;
+      const segmentZ = b.position.z - a.position.z;
+      const segmentLengthSq = segmentX * segmentX + segmentZ * segmentZ;
+      if (segmentLengthSq <= 1e-8 || Math.sqrt(segmentLengthSq) >= BLOCK_THRESHOLD) continue;
+
+      const bridgeRadius = Math.min(a.userData.height || 1.9, b.userData.height || 1.9) * BLOCKER_RADIUS_FACTOR + BALL_RADIUS;
+      for (let sample = 1; sample <= samples; sample++) {
+        const t = (sample / samples) * currentBest;
+        const point = curve.getPoint(t);
+        const along = THREE.MathUtils.clamp(
+          ((point.x - a.position.x) * segmentX + (point.z - a.position.z) * segmentZ) / segmentLengthSq,
+          0,
+          1
+        );
+        const closestX = a.position.x + segmentX * along;
+        const closestZ = a.position.z + segmentZ * along;
+        const dx = point.x - closestX;
+        const dz = point.z - closestZ;
+        const reach = THREE.MathUtils.lerp(a.userData.jump || 3.10, b.userData.jump || 3.10, along);
+        if (dx * dx + dz * dz <= bridgeRadius * bridgeRadius && point.y - BALL_RADIUS <= reach) return t;
+      }
+    }
+  }
+  return null;
+}
+
+function getTrajectoryCollision(curve, start, end, includeBlockers = true) {
+  let collision = getNetOrAntennaCollision(curve, start, end) || { t: 1, type: "none" };
+  if (!includeBlockers) return collision.type === "none" ? null : collision;
+
+  const activeBlockers = players.filter(player => player.userData.isBlocker);
+  for (const blocker of activeBlockers) {
+    const t = getIndividualBlockCollisionT(curve, start, end, blocker);
+    if (t !== null && t < collision.t) collision = { t, type: "block" };
+  }
+
+  const tightBlockT = getTightBlockCollisionT(curve, activeBlockers, collision.t);
+  if (tightBlockT !== null && tightBlockT < collision.t) collision = { t: tightBlockT, type: "block" };
+  return collision;
+}
+
 function updateAttackIndicator() {
   const start = ball.position.clone();
   const end = attackTarget.position.clone();
+  const power = parseInt(ui.attackPower.value, 10);
+  const curve = new BallisticCurve(start, end, power);
+  const collision = getTrajectoryCollision(curve, start, end);
+  const blocked = collision.type !== "none";
 
-  const dist = start.distanceTo(end);
-  const midX = (start.x + end.x) / 2;
-  const midZ = (start.z + end.z) / 2;
+  attackLineMat.color.setHex(blocked ? 0xff4d57 : 0x8f5bff);
+  if (attackLineMat.emissive) attackLineMat.emissive.setHex(blocked ? 0x5c0710 : 0x24105e);
+  attackTarget.material.color.setHex(blocked ? 0xff4d57 : 0x8f5bff);
+  attackTargetInner.material.color.set(0xffffff);
+  attackTarget.visible = true;
+  attackTarget.userData.collisionType = collision.type;
+  const collisionLabels = {
+    none: "Clear",
+    net: "Net contact",
+    antenna: "Outside antenna",
+    block: "Blocked"
+  };
+  ui.trajectoryStatus.textContent = collisionLabels[collision.type];
+  ui.trajectoryStatus.dataset.state = blocked ? "blocked" : "clear";
 
-  // Power scales arc height (Higher power = flatter arc, Lower power = loopy dink)
-  const powerFactor = parseInt(ui.attackPower.value) / 100;
-  const arcBoost = (1.0 - powerFactor) * dist * 0.4; // Low power adds significant height
-
-  const crossesNet = (start.z * end.z) <= 0;
-  const basePeak = Math.max(start.y, end.y);
-  const hNet = parseFloat(ui.netHeight.value);
-  const arcHeight = (crossesNet ? Math.max(basePeak, hNet + 0.1) : basePeak) + arcBoost;
-
-  // Control point for quadratic curve
-  const control = new THREE.Vector3(midX, arcHeight + 0.2, midZ);
-  const curve = new THREE.QuadraticBezierCurve3(start, control, end);
-
-  const targetInsideAntennaShadow = isPointInAntennaShadow(end, start);
-
-  // --- Collision Detection ---
-  let collisionT = 1.0;
-  let collisionType = targetInsideAntennaShadow ? "antenna" : "none";
-  const samples = 80;
-  const activeBlockers = players.filter(p => p.userData.isBlocker);
-
-  if (collisionType === "none") {
-    for (let i = 1; i <= samples; i++) {
-      const t = i / samples;
-      const p = curve.getPoint(t);
-
-      // 1. Net Collision (plane at z=0, from y=0 to y=hNet, within court width)
-      const prevP = curve.getPoint((i - 1) / samples);
-      if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
-        // Find exact t where z=0
-        const tNet = (prevP.z) / (prevP.z - p.z);
-        const lerpT = ((i - 1) / samples) + (tNet / samples);
-        const pNet = curve.getPoint(lerpT);
-
-        if (pNet.y <= hNet && Math.abs(pNet.x) <= COURT.halfWidth + 0.5) {
-          collisionT = lerpT;
-          collisionType = "net";
-          break;
-        }
-      }
-
-      // 1a. Antenna Collision (check if ball crosses net plane outside antenna boundaries)
-      if ((prevP.z >= 0 && p.z <= 0) || (prevP.z <= 0 && p.z >= 0)) {
-        // Find exact t where z=0 (crossing net plane)
-        const tNet = (prevP.z) / (prevP.z - p.z);
-        const lerpT = ((i - 1) / samples) + (tNet / samples);
-        const pNet = curve.getPoint(lerpT);
-
-        // Check if crossing happens outside the antenna boundaries (COURT.halfWidth)
-        if (Math.abs(pNet.x) > COURT.halfWidth) {
-          collisionT = lerpT;
-          collisionType = "antenna";
-          break;
-        }
-      }
-
-      // 2. Blocker Collision (Individual and Tight Blocks)
-      for (let j = 0; j < activeBlockers.length; j++) {
-        const bA = activeBlockers[j];
-        const bAPos = bA.position;
-        const bAH = bA.userData.height || 1.9;
-        const bAJump = bA.userData.jump || 3.10;
-        const radA = bAH * BLOCKER_RADIUS_FACTOR;
-
-        // Individual check
-        const dx = p.x - bAPos.x;
-        const dz = p.z - bAPos.z;
-        if ((dx * dx + dz * dz) < radA * radA && p.y <= bAJump) {
-          collisionT = t;
-          collisionType = "block";
-          break;
-        }
-
-        // "Tight Block" check with other blockers
-        for (let k = j + 1; k < activeBlockers.length; k++) {
-          const bB = activeBlockers[k];
-          const bBPos = bB.position;
-          const bBJump = bB.userData.jump || 3.10;
-
-          const distAB = bAPos.distanceTo(bBPos);
-          if (distAB < BLOCK_THRESHOLD) { // Threshold for "tight" block
-            // Check distance of point p to segment AB
-            const v = new THREE.Vector3().subVectors(bBPos, bAPos);
-            const w = new THREE.Vector3().subVectors(p, bAPos);
-            v.y = 0; w.y = 0; // Project to floor for proximity check
-
-            const c1 = w.dot(v);
-            if (c1 <= 0) continue;
-            const c2 = v.dot(v);
-            if (c2 <= c1) continue;
-
-            const b = c1 / c2;
-            const pb = bAPos.clone().add(v.clone().multiplyScalar(b));
-            const distToSegmentSq = (p.x - pb.x) * (p.x - pb.x) + (p.z - pb.z) * (p.z - pb.z);
-
-            if (distToSegmentSq < (radA * radA) && p.y <= Math.max(bAJump, bBJump)) {
-              collisionT = t;
-              collisionType = "block";
-              break;
-            }
-          }
-        }
-        if (collisionType !== "none") break;
-      }
-      if (collisionType !== "none") break;
-    }
-  }
-
-  // Update visual appearance
-  if (collisionType !== "none") {
-    attackLineMat.color.set(0xff4444); // Red for blocked
-    attackTarget.material.color.set(0xff4444);
-    attackTargetInner.material.color.set(0xffffff);
-  } else {
-    attackLineMat.color.set(0x8b00ff); // Normal purple
-    attackTarget.material.color.set(0x8b00ff);
-    attackTargetInner.material.color.set(0xffffff);
-  }
-  attackTarget.visible = true; // Always visible now
-
-  // Re-generate tube geometry (trimmed to collision point)
-  const segments = 32;
-  const points = [];
-  for (let i = 0; i <= segments; i++) {
-    points.push(curve.getPoint((i / segments) * collisionT));
-  }
-  const trimmedCurve = new THREE.CatmullRomCurve3(points);
-
+  const trimmedCurve = new TrimmedCurve(curve, collision.t);
   attackLine.geometry.dispose();
-  attackLine.geometry = new THREE.TubeGeometry(trimmedCurve, segments, 0.04, 8, false);
+  attackLine.geometry = new THREE.TubeGeometry(trimmedCurve, 48, 0.035, 10, false);
 }
 
 function updatePlayerRotations() {
@@ -1694,7 +2007,7 @@ function updatePlayerRotations() {
 function updateBlockShadow() {
   const ballPos = ball.position.clone();
   ballPos.y = 0;
-  const depth = 14;
+  const depth = TACTICAL_SHADOW_DEPTH;
 
   const activeBlockers = players.filter(p => p.userData.isBlocker);
   if (activeBlockers.length === 0) {
@@ -1864,52 +2177,61 @@ function updateNetShadow() {
     return;
   }
 
-  const b = ball.position.clone();
-  const H_net = parseFloat(ui.netHeight.value);
+  const start = ball.position.clone();
+  const netHeight = parseFloat(ui.netHeight.value);
+  const power = parseInt(ui.attackPower.value, 10);
 
   // Only show shadow if ball is in the attacking half (z > 0)
-  if (b.z < 0) {
+  if (start.z < 0) {
     netShadow.geometry.dispose();
     netShadow.geometry = new THREE.BufferGeometry();
     return;
   }
 
-  // Account for "Power" - lower power means more arc, which reduces the dead zone
-  const distToNet = b.z;
-  const powerFactor = parseInt(ui.attackPower.value) / 100;
-  const arcBoost = (1.0 - powerFactor) * distToNet * 0.4;
-  const effectiveHeight = b.y + arcBoost;
+  const isBlockedAt = (targetX, targetZ) => {
+    const end = new THREE.Vector3(targetX, attackTarget.position.y, targetZ);
+    const curve = new BallisticCurve(start, end, power);
+    const crossing = getNetCrossing(curve, start, end);
+    if (!crossing || Math.abs(crossing.point.x) + BALL_RADIUS > COURT.halfWidth) return false;
+    return crossing.point.y - BALL_RADIUS <= netHeight && crossing.point.y + BALL_RADIUS >= netHeight - 1;
+  };
 
-  let z_s, x_s1, x_s2;
+  const xSamples = 48;
+  const nearZ = -0.6;
+  const farZ = -COURT.halfLength;
+  const positions = [];
+  const indices = [];
 
-  if (effectiveHeight > H_net + 0.01) {
-    z_s = (H_net * b.z) / (H_net - effectiveHeight);
-    const t = effectiveHeight / (effectiveHeight - H_net);
-    x_s1 = b.x + t * (-4.5 - b.x);
-    x_s2 = b.x + t * (4.5 - b.x);
+  for (let i = 0; i <= xSamples; i++) {
+    const x = THREE.MathUtils.lerp(-COURT.halfWidth, COURT.halfWidth, i / xSamples);
+    const nearBlocked = isBlockedAt(x, nearZ);
+    let boundaryZ = 0;
 
-    z_s = Math.max(z_s, -20);
-  } else {
-    // Ball (even with arc) cannot clear the net
-    z_s = -20;
-    x_s1 = -40;
-    x_s2 = 40;
+    if (nearBlocked) {
+      if (isBlockedAt(x, farZ)) {
+        boundaryZ = farZ;
+      } else {
+        let blockedZ = nearZ;
+        let reachableZ = farZ;
+        for (let iteration = 0; iteration < 16; iteration++) {
+          const candidateZ = (blockedZ + reachableZ) / 2;
+          if (isBlockedAt(x, candidateZ)) blockedZ = candidateZ;
+          else reachableZ = candidateZ;
+        }
+        boundaryZ = blockedZ;
+      }
+    }
+
+    positions.push(x, 0.007, 0, x, 0.007, boundaryZ);
+    if (i < xSamples) {
+      const base = i * 2;
+      indices.push(base, base + 1, base + 3, base, base + 3, base + 2);
+    }
   }
 
-  const allPositions = [
-    -4.5, 0.005, 0,
-    4.5, 0.005, 0,
-    x_s2, 0.005, z_s,
-    x_s1, 0.005, z_s
-  ];
-
-  const positions = new Float32Array(allPositions);
-  const indices = [0, 1, 2, 2, 3, 0];
-
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
-  geometry.computeVertexNormals();
   netShadow.geometry.dispose();
   netShadow.geometry = geometry;
 }
@@ -1924,7 +2246,6 @@ function updateAntennaShadows() {
 function getAntennaShadowTriangles(ballPosition) {
   const b = ballPosition.clone();
   const antennaX = COURT.halfWidth;
-  const depth = 20;
 
   if (b.z < 0) {
     return { left: null, right: null };
@@ -1938,23 +2259,15 @@ function getAntennaShadowTriangles(ballPosition) {
       return null;
     }
 
-    const dx = sideX - b.x;
-    const dz = -b.z;
-    const dist = Math.hypot(dx, dz);
-
-    if (dist <= 0.01) {
-      return null;
-    }
-
-    const dirX = dx / dist;
-    const dirZ = dz / dist;
-    const endX = sideX + dirX * depth;
-    const endZ = Math.max(dirZ * depth, -COURT.halfLength);
+    const endZ = -COURT.halfLength - 12;
+    const maxVisibleX = COURT.halfWidth + 12;
+    const endpoint = projectAntennaShadowEnd(b.x, b.z, sideX, endZ, -maxVisibleX, maxVisibleX);
+    if (!endpoint) return null;
 
     return [
       new THREE.Vector3(sideX, 0.008, 0),
       new THREE.Vector3(sideX, 0.008, endZ),
-      new THREE.Vector3(endX, 0.008, endZ)
+      new THREE.Vector3(endpoint.x, 0.008, endpoint.z)
     ];
   };
 
@@ -1985,45 +2298,6 @@ function applyAntennaShadowGeometry(shadowMesh, triangle) {
 
   shadowMesh.geometry.dispose();
   shadowMesh.geometry = geometry;
-}
-
-function isPointInAntennaShadow(point, ballPosition = ball.position) {
-  const antennaTriangles = getAntennaShadowTriangles(ballPosition);
-
-  return isPointInsideTriangleXZ(point, antennaTriangles.left) ||
-    isPointInsideTriangleXZ(point, antennaTriangles.right);
-}
-
-function isPointInsideTriangleXZ(point, triangle, epsilon = 1e-6) {
-  if (!triangle) {
-    return false;
-  }
-
-  const [a, b, c] = triangle;
-
-  const v0x = c.x - a.x;
-  const v0z = c.z - a.z;
-  const v1x = b.x - a.x;
-  const v1z = b.z - a.z;
-  const v2x = point.x - a.x;
-  const v2z = point.z - a.z;
-
-  const dot00 = v0x * v0x + v0z * v0z;
-  const dot01 = v0x * v1x + v0z * v1z;
-  const dot02 = v0x * v2x + v0z * v2z;
-  const dot11 = v1x * v1x + v1z * v1z;
-  const dot12 = v1x * v2x + v1z * v2z;
-
-  const denom = dot00 * dot11 - dot01 * dot01;
-  if (Math.abs(denom) < epsilon) {
-    return false;
-  }
-
-  const invDenom = 1 / denom;
-  const u = (dot11 * dot02 - dot01 * dot12) * invDenom;
-  const v = (dot00 * dot12 - dot01 * dot02) * invDenom;
-
-  return u >= -epsilon && v >= -epsilon && (u + v) <= 1 + epsilon;
 }
 
 
@@ -2093,7 +2367,8 @@ renderer.domElement.addEventListener("pointermove", (event) => {
     raycaster.setFromCamera(pointer, camera);
     if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
     const dragHeight = activeDrag.userData.dragHeight ?? 0;
-    activeDrag.position.set(dragPoint.x + dragOffset.x, dragHeight, dragPoint.z + dragOffset.z);
+    const visualHeight = activeDrag.userData.kind === "player" ? activeDrag.position.y : dragHeight;
+    activeDrag.position.set(dragPoint.x + dragOffset.x, visualHeight, dragPoint.z + dragOffset.z);
     clampToCourt(activeDrag);
 
     // Proximity-based stance switching
@@ -2145,7 +2420,10 @@ function getFullStateJSON() {
     },
     physics: {
       height: ui.contactHeight.value,
-      power: ui.attackPower.value
+      power: ui.attackPower.value,
+      mergeShadows: ui.mergeShadows.checked,
+      netShadow: ui.netShadowToggle.checked,
+      netHeight: ui.netHeight.value
     },
     zones: zones.map(z => ({
       color: '#' + z.material.color.getHexString(),
@@ -2255,6 +2533,7 @@ ui.modeSwitch.addEventListener("click", (event) => {
   ui.modeSwitch.classList.toggle("dragging", mode === "paint");
   ui.modeSwitch.querySelectorAll(".switch-option").forEach(opt => {
     opt.classList.toggle("active", opt === option);
+    opt.setAttribute("aria-pressed", String(opt === option));
   });
 });
 
@@ -2266,34 +2545,11 @@ ui.clearZones.addEventListener("click", () => {
     scene.remove(zone);
   });
   zones.length = 0;
+  saveLastKnown();
 });
 
 ui.resetPlayers.addEventListener("click", () => {
   resetPlayerPositions();
-});
-
-ui.rotateTeam.addEventListener("click", () => {
-  // Rotate team clockwise (Standard VB rotation)
-  // i=0(P1), i=1(P2), i=2(P3), i=3(P4), i=4(P5), i=5(P6)
-  const oldPositions = players.map(p => p.position.clone());
-
-  // Rotation: P1 moves to P6's old spot, P6 to P5, P5 to P4, P4 to P3, P3 to P2, P2 to P1
-  // This means P6 gets P1's old position, etc.
-  players[5].position.copy(oldPositions[0]); // P6 -> Pos 1's old
-  players[4].position.copy(oldPositions[5]); // P5 -> Pos 6's old
-  players[3].position.copy(oldPositions[4]); // P4 -> Pos 5's old
-  players[2].position.copy(oldPositions[3]); // P3 -> Pos 4's old
-  players[1].position.copy(oldPositions[2]); // P2 -> Pos 3's old
-  players[0].position.copy(oldPositions[1]); // P1 -> Pos 2's old
-
-  players.forEach(p => {
-    const isAtNet = p.position.z > -1.5;
-    setPlayerStance(p, isAtNet);
-  });
-
-  updatePlayerRotations();
-  updateBlockShadow();
-  saveLastKnown();
 });
 
 ui.contactHeight.addEventListener("input", (e) => {
@@ -2311,14 +2567,17 @@ ui.contactHeight.addEventListener("input", (e) => {
   saveLastKnown();
 });
 
-ui.attackPower.addEventListener("input", (e) => {
-  const val = parseInt(e.target.value);
-
+function setPowerLabel(val) {
   let label = "Normal";
   if (val < 25) label = "Free";
   else if (val < 50) label = "Weak";
   else if (val > 85) label = "Strong";
   ui.powerValue.textContent = label;
+}
+
+ui.attackPower.addEventListener("input", (e) => {
+  const val = parseInt(e.target.value, 10);
+  setPowerLabel(val);
 
   updateAttackIndicator();
   updateNetShadow();
@@ -2370,28 +2629,10 @@ ui.shareLayout.addEventListener("click", generateShareUrl);
 refreshDropdowns();
 
 ui.rotateTeam.addEventListener("click", () => {
-  // Standard Rotation: 1 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1
-  // We'll perform a clockwise shift of positions among the 6 players.
+  // Standard clockwise rotation: 1 -> 6 -> 5 -> 4 -> 3 -> 2 -> 1.
   if (players.length < 6) return;
-
-  // Store current positions
-  const pos = players.map(p => p.position.clone());
-
-  // Shift: 
-  // Player 1 (idx 0) moves to Player 6's spot (idx 5)
-  // Player 6 (idx 5) moves to Player 5's spot (idx 4)
-  // Player 5 (idx 4) moves to Player 4's spot (idx 3)
-  // Player 4 (idx 3) moves to Player 3's spot (idx 2)
-  // Player 3 (idx 2) moves to Player 2's spot (idx 1)
-  // Player 2 (idx 1) moves to Player 1's spot (idx 0)
-
-  const oldPos = [...pos];
-  players[0].position.copy(oldPos[5]);
-  players[5].position.copy(oldPos[4]);
-  players[4].position.copy(oldPos[3]);
-  players[3].position.copy(oldPos[2]);
-  players[2].position.copy(oldPos[1]);
-  players[1].position.copy(oldPos[0]);
+  const rotatedPositions = rotateClockwisePositions(players.map(player => player.position.clone()));
+  players.forEach((player, index) => player.position.copy(rotatedPositions[index]));
 
   // Update heights/stances/shadows
   players.forEach(p => {
@@ -2406,6 +2647,7 @@ ui.rotateTeam.addEventListener("click", () => {
   }
 
   updatePlayerRotations();
+  updateAttackIndicator();
   updateBlockShadow();
   updateNetShadow();
   updateAntennaShadows();
@@ -2422,39 +2664,51 @@ function applyTacticalState(data) {
   });
   zones.length = 0;
 
-  if (data.players) {
+  if (Array.isArray(data.players)) {
     data.players.forEach((d, i) => {
       if (players[i]) {
-        players[i].position.set(d.x, players[i].userData.dragHeight, d.z);
-        setPlayerStance(players[i], d.z > -1.5);
+        const x = finiteInRange(d.x, -COURT.halfWidth - 1.5, COURT.halfWidth + 1.5, players[i].position.x);
+        const z = finiteInRange(d.z, -COURT.halfLength - 1.5, -0.3, players[i].position.z);
+        players[i].position.set(x, players[i].userData.dragHeight, z);
+        setPlayerStance(players[i], z > -1.5);
       }
     });
   }
   if (data.ball) {
-    ball.position.x = data.ball.x;
-    ball.position.z = data.ball.z;
+    ball.position.x = finiteInRange(data.ball.x, -COURT.halfWidth - 1.5, COURT.halfWidth + 1.5, ball.position.x);
+    ball.position.z = finiteInRange(data.ball.z, 0.4, COURT.halfLength + 1.5, ball.position.z);
   }
   if (data.target) {
-    attackTarget.position.x = data.target.x;
-    attackTarget.position.z = data.target.z;
+    attackTarget.position.x = finiteInRange(data.target.x, -COURT.halfWidth - 1.5, COURT.halfWidth + 1.5, attackTarget.position.x);
+    attackTarget.position.z = finiteInRange(data.target.z, -COURT.halfLength - 1.5, -0.6, attackTarget.position.z);
   }
   if (data.physics) {
-    ui.contactHeight.value = data.physics.height;
-    ui.attackPower.value = data.physics.power;
-    if (data.physics.mergeShadows !== undefined) {
-      ui.mergeShadows.checked = data.physics.mergeShadows;
-    }
-    if (data.physics.netShadow !== undefined) {
-      ui.netShadowToggle.checked = data.physics.netShadow;
-    }
-    ui.contactHeight.dispatchEvent(new Event('input'));
-    ui.attackPower.dispatchEvent(new Event('input'));
+    const supportedNetHeights = [...ui.netHeight.options].map(option => option.value);
+    const normalizedPhysics = normalizePhysicsState(data.physics, supportedNetHeights);
+    const contactHeight = normalizedPhysics.height;
+    const attackPower = normalizedPhysics.power;
+    ui.contactHeight.value = String(contactHeight);
+    ui.attackPower.value = String(attackPower);
+    ball.position.y = contactHeight;
+    ball.userData.dragHeight = contactHeight;
+    ui.heightValue.textContent = contactHeight.toFixed(2) + "m";
+    setPowerLabel(attackPower);
+    ui.mergeShadows.checked = normalizedPhysics.mergeShadows;
+    ui.netShadowToggle.checked = normalizedPhysics.netShadow;
+    ui.netHeight.value = normalizedPhysics.netHeight;
+    updateNetHeightVisuals();
   }
 
-  if (data.zones) {
+  if (Array.isArray(data.zones)) {
     data.zones.forEach(zd => {
-      const z = createZoneMesh({ color: zd.color });
-      const corners = zd.corners.map(c => new THREE.Vector3(c.x, 0, c.z));
+      if (!Array.isArray(zd.corners) || zd.corners.length !== 4) return;
+      const color = /^#[0-9a-f]{6}$/i.test(zd.color) ? zd.color : "#4fc3f7";
+      const corners = zd.corners.map(c => new THREE.Vector3(
+        finiteInRange(c.x, -COURT.halfWidth, COURT.halfWidth, 0),
+        0,
+        finiteInRange(c.z, -COURT.halfLength, COURT.halfLength, 0)
+      ));
+      const z = createZoneMesh({ color });
       updateZoneGeometry(z, ...corners);
       scene.add(z);
       zones.push(z);
@@ -2487,7 +2741,8 @@ function generateShareUrl() {
         h: ui.contactHeight.value,
         pw: ui.attackPower.value,
         ms: ui.mergeShadows.checked,
-        ns: ui.netShadowToggle.checked
+        ns: ui.netShadowToggle.checked,
+        nh: ui.netHeight.value
       },
       z: zones.map(z => ({
         c: '#' + z.material.color.getHexString(),
@@ -2518,27 +2773,29 @@ function loadFromUrl() {
     const state = JSON.parse(json);
 
     // Apply roster (r)
-    if (state.r) {
+    if (Array.isArray(state.r)) {
       state.r.forEach((d, i) => {
         if (players[i]) {
-          updatePlayerLabel(players[i], d.l, true);
-          updatePlayerHeight(players[i], d.h, true);
-          if (d.j) updatePlayerJump(players[i], d.j, true);
+          updatePlayerLabel(players[i], String(d.l ?? i + 1).slice(0, 6), true);
+          updatePlayerHeight(players[i], finiteInRange(d.h, 1.6, 2.2, 1.9), true);
+          updatePlayerJump(players[i], finiteInRange(d.j, 2, 4, 3.1), true);
         }
       });
     }
 
     // Apply tactics (t)
     if (state.t) {
+      const sharedPhysics = state.t.ph || {};
       const legacyData = {
         players: state.t.p,
         ball: state.t.b,
         target: state.t.tg,
         physics: {
-          height: state.t.ph.h,
-          power: state.t.ph.pw,
-          mergeShadows: state.t.ph.ms,
-          netShadow: state.t.ph.ns
+          height: sharedPhysics.h,
+          power: sharedPhysics.pw,
+          mergeShadows: sharedPhysics.ms,
+          netShadow: sharedPhysics.ns,
+          netHeight: sharedPhysics.nh
         },
         zones: state.t.z ? state.t.z.map(zd => ({
           color: zd.c,
@@ -2580,23 +2837,26 @@ if (!loadedFromUrl) {
   }
 }
 
-// Initial labels for attack physics
-ui.heightValue.textContent = "3.00m";
-ui.powerValue.textContent = "Normal";
+// Labels reflect restored state rather than overwriting it with defaults.
+ui.heightValue.textContent = Number(ui.contactHeight.value).toFixed(2) + "m";
+setPowerLabel(parseInt(ui.attackPower.value, 10));
 
 // Resize
 addEventListener("resize", () => {
+  const pixelRatio = Math.min(devicePixelRatio, 1.75);
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
+  renderer.setPixelRatio(pixelRatio);
   renderer.setSize(innerWidth, innerHeight);
+  composer.setPixelRatio(pixelRatio);
   composer.setSize(innerWidth, innerHeight);
-  bloomPass.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  gtaoPass.enabled = innerWidth > 700;
 });
 
 // Menu Toggle Logic
 function toggleMenu(force) {
   const isClosed = ui.menu.classList.toggle("closed", force);
+  ui.menuToggle.setAttribute("aria-expanded", String(!isClosed));
   ui.menuToggle.innerHTML = isClosed 
     ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>'
     : '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
@@ -2616,16 +2876,26 @@ if (window.innerWidth <= 600) {
   toggleMenu(true);
 }
 
-// Animate
+// Animate. Tactical geometry is rebuilt only by state-changing events; this
+// loop is reserved for camera damping and inexpensive presentation animation.
+const clock = new THREE.Clock();
 let time = 0;
 function animate() {
   requestAnimationFrame(animate);
-  time += 0.016;
+  const delta = Math.min(clock.getDelta(), 0.05);
+  time += delta;
 
   controls.update();
 
-  players.forEach((player) => {
-    player.position.y = player.userData.dragHeight ?? 0;
+  players.forEach((player, index) => {
+    player.userData.mixer?.update(delta);
+    const jumpBlend = 1 - Math.exp(-9 * delta);
+    player.position.y = THREE.MathUtils.lerp(player.position.y, player.userData.dragHeight ?? 0, jumpBlend);
+    const torso = player.getObjectByName("torso");
+    if (torso) {
+      const breath = Math.sin(time * 1.65 + player.userData.animationPhase + index * 0.17) * 0.006;
+      torso.scale.set(1 - breath * 0.35, 1 + breath, 1 - breath * 0.35);
+    }
   });
   attackTarget.position.y = 0.06;
 
@@ -2636,15 +2906,9 @@ function animate() {
   attackTargetInner.material.opacity = 0.6 + pulse * 0.4;
 
   // Subtle ball rotation
-  ball.rotation.x += 0.01;
-  ball.rotation.y += 0.005;
+  ball.rotation.x += delta * 0.62;
+  ball.rotation.y += delta * 0.34;
 
-  updatePlayerRotations();
-  updateAttackIndicator();
-  updateBlockShadow();
-  updateNetShadow();
-  updateAntennaShadows();
-
-  composer.render();
+  composer.render(delta);
 }
 animate();

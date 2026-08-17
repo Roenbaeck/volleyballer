@@ -1,0 +1,12 @@
+{
+  "name": "volleyball-tactics-board",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "generate:player": "node scripts/generate-player-model.mjs"
+  },
+  "devDependencies": {
+    "three": "0.160.0"
+  }
+}
