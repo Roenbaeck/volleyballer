@@ -79,3 +79,13 @@ test("overlapping block wedges render as a constant-opacity stencil union", () =
   assert.match(mainSource, /stencilFunc: THREE\.EqualStencilFunc/);
   assert.match(mainSource, /const blockShadowFill = new THREE\.Mesh/);
 });
+
+test("blockers stay square to the net while defenders track the ball", () => {
+  const rotationStart = mainSource.indexOf("function updatePlayerRotations()");
+  const rotationEnd = mainSource.indexOf("\n}\n\nfunction updateBlockShadow", rotationStart) + 2;
+  const rotationFunction = mainSource.slice(rotationStart, rotationEnd);
+
+  assert.match(rotationFunction, /if \(player\.userData\.isBlocker\)/);
+  assert.match(rotationFunction, /player\.rotation\.set\(0, BLOCKER_NET_FACING_Y, 0\)/);
+  assert.match(rotationFunction, /else \{[\s\S]*player\.lookAt\(target\)/);
+});

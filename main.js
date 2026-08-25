@@ -16,7 +16,7 @@ import {
   normalizePhysicsState,
   projectAntennaShadowEnd,
   rotateClockwisePositions
-} from "./tactics-core.js?v=20260817-fidelity11";
+} from "./tactics-core.js?v=20260826-fidelity12";
 
 let playerModelAsset = null;
 try {
@@ -103,6 +103,7 @@ const COURT = {
 
 const BLOCK_THRESHOLD = 0.9; // Max distance between blockers to be considered a "tight" unified block
 const BLOCKER_RADIUS_FACTOR = 0.16; // Multiplier for player height to determine blocking width
+const BLOCKER_NET_FACING_Y = 0;
 const TACTICAL_SHADOW_DEPTH = 22;
 const EDGE_FOG_FADE_DISTANCE = 9;
 
@@ -1977,13 +1978,14 @@ function updatePlayerRotations() {
   const ballPos = ball.position.clone();
 
   players.forEach(player => {
-    // Determine target point: projected ball position at player's height
-    // This ensures they rotate only on the Y-axis
-    const target = new THREE.Vector3(ballPos.x, player.position.y, ballPos.z);
-
-    // Smoothly or instantly face the ball
-    if (player.position.distanceTo(target) > 0.1) {
-      player.lookAt(target);
+    if (player.userData.isBlocker) {
+      // Good blocking posture stays square to the net. The model faces +Z at
+      // zero yaw, so its shoulder line remains parallel with the net along X.
+      player.rotation.set(0, BLOCKER_NET_FACING_Y, 0);
+    } else {
+      // Back-court defenders can continue tracking the ball with their body.
+      const target = new THREE.Vector3(ballPos.x, player.position.y, ballPos.z);
+      if (player.position.distanceTo(target) > 0.1) player.lookAt(target);
     }
 
     // Dynamic head pitching: make the head look up/down at the ball
